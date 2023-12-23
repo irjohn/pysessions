@@ -1,3 +1,19 @@
+IP_APIS = (
+    "https://api.my-ip.io/ip",
+    "https://api.ipify.org",
+    "https://icanhazip.com",
+    "https://ipinfo.io/ip",
+    "https://wtfismyip.com/text",
+    "https://ifconfig.me/ip",
+    "https://checkip.amazonaws.com",
+    "https://api.myip.la",
+    "https://ipapi.co/ip",
+    "https://trackip.net/ip",
+    "https://ip.rootnet.in",
+    "https://myexternalip.com/raw",
+    "https://ip8.com/ip",
+)
+
 USER_AGENTS = {
     "desktop": [
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",

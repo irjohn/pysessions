@@ -6,25 +6,11 @@ from stem.control import Controller
 from httpx import Client
 
 from .useragents import UserAgents
-
+from .variables import IP_APIS
 
 class TorSession(Client):
     RNG = SystemRandom()
-    IP_APIS = (
-        "https://api.my-ip.io/ip",
-        "https://api.ipify.org",
-        "https://icanhazip.com",
-        "https://ipinfo.io/ip",
-        "https://wtfismyip.com/text",
-        "https://ifconfig.me/ip",
-        "https://checkip.amazonaws.com",
-        "https://api.myip.la",
-        "https://ipapi.co/ip",
-        "https://trackip.net/ip",
-        "https://ip.rootnet.in",
-        "https://myexternalip.com/raw",
-        "https://ip8.com/ip",
-    )
+
     """
     tor_ports = specify Tor socks ports tuple (default is (9150,), as the default in Tor Browser),
     if more than one port is set, the requests will be sent sequentially through the each port;
@@ -36,9 +22,9 @@ class TorSession(Client):
     """
 
     def __init__(self, tor_ports=(9000, 9001, 9002, 9003, 9004), tor_cport=9051,
-                 password=None, autochange_id=5, headers=None):
+                 password=None, autochange_id=5, headers=None, **kwargs):
         self.check_service()
-        super().__init__()
+        super().__init__(**kwargs)
         self.tor_ports = tor_ports
         self.tor_cport = tor_cport
         self.password = password
@@ -72,6 +58,7 @@ class TorSession(Client):
                 return self.check_service()
         return
     
+
     def new_id(func):     
         def wrapper(self, *args, **kwargs):         
             with Controller.from_port(port=self.tor_cport) as controller:
@@ -82,45 +69,50 @@ class TorSession(Client):
 
 
     def check_ip(self):
-        my_ip = self.get(self.RNG.choice(self.IP_APIS)).text
+        my_ip = self.get(self.RNG.choice(IP_APIS)).text
         return my_ip
     
 
     @new_id
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, headers=None, **kwargs):
         port = next(self.ports)
 
-        # if using requests_tor as drop in replacement for requests remove any user set proxies
-        if kwargs.__contains__("proxies"):
-            del kwargs["proxies"]
+        # if using requests_tor as drop in replacement for requests remove any user set proxy
+        if kwargs.__contains__("proxy"):
+            del kwargs["proxy"]
 
-        proxies = {
+        proxy = {
             "http": f"socks5h://localhost:{port}",
             "https": f"socks5h://localhost:{port}",
         }
 
-        kwargs["headers"] = kwargs.get("headers", self._headers)
         try:
-            resp = super().request(method, url, proxies=proxies, **kwargs)
+            resp = super().request(method, url, headers=headers or self.headers, **kwargs)
         except Exception as e:
             print(e)
-            return self.request(method, url, proxies=proxies, **kwargs)
+            return self.request(method, url, proxy=proxy, **kwargs)
         return resp
+
 
     def get(self, url, **kwargs):
         return self.request("GET", url, **kwargs)
 
+
     def post(self, url, **kwargs):
         return self.request("POST", url, **kwargs)
+
 
     def put(self, url, **kwargs):
         return self.request("PUT", url, **kwargs)
 
+
     def patch(self, url, **kwargs):
         return self.request("PATCH", url, **kwargs)
 
+
     def delete(self, url, **kwargs):
         return self.request("DELETE", url, **kwargs)
+
 
     def head(self, url, **kwargs):
         return self.request("HEAD", url, **kwargs)
