@@ -20,6 +20,7 @@ from aiohttp import (
 
 from httpx import (
     AsyncClient as _AsyncClient,
+    Headers
 )
 
 from .useragents import (

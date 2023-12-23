@@ -18,6 +18,7 @@ class UserAgents:
         cls.agents = (ua for ua in cls.RNG.choices(_USER_AGENTS, k=n_requests or 250))
 
 
+
     @classmethod
     @property
     def ua(cls):
