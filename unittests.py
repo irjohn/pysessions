@@ -108,10 +108,10 @@ async def test_asyncclient(n_trials=1000):
 
 
 if __name__ == "__main__":
-    N_TRIALS = 100
+    N_TRIALS = 1000
     loop = asyncio.get_event_loop()
 
     async_session_results = loop.run_until_complete(test_asyncsession(N_TRIALS))
-    session_results = test_session(N_TRIALS)
+    #session_results = test_session(N_TRIALS)
     #tor_session_results = test_torsession(N_TRIALS)
-    async_client_results = r = loop.run_until_complete(test_asyncclient(N_TRIALS))
+    #async_client_results = r = loop.run_until_complete(test_asyncclient(N_TRIALS))

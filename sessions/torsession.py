@@ -3,7 +3,10 @@ from itertools import cycle
 
 from stem import Signal
 from stem.control import Controller
-from httpx import Client
+from httpx import (
+    Client,
+    Headers
+)
 
 from .useragents import UserAgents
 from .variables import IP_APIS
@@ -22,7 +25,8 @@ class TorSession(Client):
     """
 
     def __init__(self, tor_ports=(9000, 9001, 9002, 9003, 9004), tor_cport=9051,
-                 password=None, autochange_id=5, headers=None, **kwargs):
+                 password=None, autochange_id=5, headers={}, **kwargs):
+        self._headers = headers
         self.check_service()
         super().__init__(**kwargs)
         self.tor_ports = tor_ports
@@ -35,7 +39,7 @@ class TorSession(Client):
 
     @property
     def headers(self):
-        return self._headers or UserAgents.headers
+        return Headers(UserAgents.headers | self._headers)
     
 
     @headers.setter

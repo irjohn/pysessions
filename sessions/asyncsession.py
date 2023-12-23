@@ -8,6 +8,7 @@ from aiohttp import (
 
 from httpx import (
     AsyncClient as _AsyncClient,
+    Headers
 )
 
 from .useragents import UserAgents
@@ -16,7 +17,7 @@ from .objects import AsyncResponse
     
 
 class AsyncSession(ClientSession):
-    def __init__(self, *args, headers=None, skip_auto_headers="User-Agent", **kwargs):
+    def __init__(self, *args, headers={}, skip_auto_headers="User-Agent", **kwargs):
         self._headers = headers
         super().__init__(*args, headers=headers, json_serialize=json.dumps, skip_auto_headers=skip_auto_headers, **kwargs)
 
@@ -32,7 +33,7 @@ class AsyncSession(ClientSession):
 
     @property
     def headers(self):
-        return self._headers or UserAgents.headers
+        return Headers(UserAgents.headers | self._headers)
 
 
     @headers.setter
@@ -118,7 +119,8 @@ class AsyncSession(ClientSession):
 
 
 class AsyncClient(_AsyncClient):
-    def __init__(self, headers=None, http2=True, **kwargs):
+    def __init__(self, headers={}, http2=True, **kwargs):
+        self._headers = headers
         super().__init__(headers=headers, http2=http2, **kwargs)
 
 
@@ -133,7 +135,7 @@ class AsyncClient(_AsyncClient):
 
     @property
     def headers(self):
-        return self._headers or UserAgents.headers
+        return Headers(UserAgents.headers | self._headers)
 
 
     @headers.setter

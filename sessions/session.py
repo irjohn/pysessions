@@ -1,10 +1,14 @@
-from httpx import Client
+from httpx import (
+    Client,
+    Headers
+)
 
 from .useragents import UserAgents
 
 
 class Session(Client):
-    def __init__(self, headers=None, http2=True, **kwargs):
+    def __init__(self, headers={}, http2=True, **kwargs):
+        self._headers = headers
         super().__init__(headers=headers, http2=http2, **kwargs)
 
 
@@ -19,7 +23,7 @@ class Session(Client):
 
     @property
     def headers(self):
-        return self._headers or UserAgents.headers
+        return Headers(UserAgents.headers | self._headers)
 
 
     @headers.setter
