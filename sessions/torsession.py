@@ -130,7 +130,7 @@ class TorSession(_Session):
     def check_ip(self):
         my_ip = self.get(self.RNG.choice(_IP_APIS)).text
         return my_ip
-    
+
 
     def _start_controller(self):
         self._controller = _Controller.from_port(port=self.tor_cport)
