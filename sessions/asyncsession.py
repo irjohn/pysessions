@@ -13,19 +13,12 @@ from httpx import (
 from .useragents import UserAgents
 from .objects import AsyncResponse
 
-
-def isiter(item):
-    try:
-        iter(item)
-        return True
-    except:
-        return False
     
 
 class AsyncSession(ClientSession):
-    def __init__(self, *args, headers=None, **kwargs):
+    def __init__(self, *args, headers=None, skip_auto_headers="User-Agent", **kwargs):
         self._headers = headers
-        super().__init__(*args, headers=headers, json_serialize=json.dumps, **kwargs)
+        super().__init__(*args, headers=headers, json_serialize=json.dumps, skip_auto_headers=skip_auto_headers, **kwargs)
 
 
     async def __aenter__(self):
@@ -125,8 +118,8 @@ class AsyncSession(ClientSession):
 
 
 class AsyncClient(_AsyncClient):
-    def __init__(self, http2=True, **kwargs):
-        super().__init__(http2=http2, **kwargs)
+    def __init__(self, headers=None, http2=True, **kwargs):
+        super().__init__(headers=headers, http2=http2, **kwargs)
 
 
     async def __aenter__(self):

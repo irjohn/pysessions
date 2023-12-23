@@ -12,6 +12,9 @@ from aiohttp import (
     HttpVersion,
 )
 
+from .variables import STATUS_CODES
+
+
 @dataclass(slots=True)
 class AsyncResponse:
     version: HttpVersion
@@ -34,3 +37,6 @@ class AsyncResponse:
     text: str
     json: dict | None
     request_info: RequestInfo
+
+    def __repr__(self):
+        return f"<Response [{self.status} {STATUS_CODES[self.status]}]>"

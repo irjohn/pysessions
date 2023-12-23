@@ -46,7 +46,13 @@ def atimer(func):
 @timer
 def test_session(n_trials=1000):
     with Session() as session:
-        #return deque(map(session.get, tuple(URL for _ in range(n_trials))), maxlen=0)
+        if n_trials >= 10000:
+            return deque(map(session.get, (GET_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.post, (POST_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.put, (PUT_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.patch, (PATCH_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.delete, (DELETE_URL,)*n_trials), maxlen=0)
+        
         return tuple(map(session.get, (GET_URL,)*n_trials)) +\
                tuple(map(session.post, (POST_URL,)*n_trials)) +\
                tuple(map(session.put, (PUT_URL,)*n_trials)) +\
@@ -57,7 +63,13 @@ def test_session(n_trials=1000):
 @timer
 def test_torsession(n_trials=1000):
     with TorSession() as session:
-        #return deque(map(session.get, tuple(URL for _ in range(n_trials))), maxlen=0)
+        if n_trials >= 10000:
+            return deque(map(session.get, (GET_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.post, (POST_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.put, (PUT_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.patch, (PATCH_URL,)*n_trials), maxlen=0) +\
+                   deque(map(session.delete, (DELETE_URL,)*n_trials), maxlen=0)
+
         return tuple(map(session.get, (GET_URL,)*n_trials)) +\
                tuple(map(session.post, (POST_URL,)*n_trials)) +\
                tuple(map(session.put, (PUT_URL,)*n_trials)) +\
@@ -68,14 +80,15 @@ def test_torsession(n_trials=1000):
 @atimer
 async def test_asyncsession(n_trials=1000):
     async with AsyncSession() as session:
-
         async with asyncio.TaskGroup() as tg:
             tasks = tuple(tg.create_task(session.get(GET_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.post(POST_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.put(PUT_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.patch(PATCH_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.delete(DELETE_URL)) for _ in range(n_trials))
-        
+
+    if n_trials >= 10000:
+        return tuple()     
     return tuple(task.result() for task in tasks)
 
 
@@ -89,12 +102,13 @@ async def test_asyncclient(n_trials=1000):
                     tuple(tg.create_task(session.put(PUT_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.patch(PATCH_URL)) for _ in range(n_trials)) +\
                     tuple(tg.create_task(session.delete(DELETE_URL)) for _ in range(n_trials))
-        
+    if n_trials >= 10000:
+        return tuple()
     return tuple(task.result() for task in tasks)
 
 
 if __name__ == "__main__":
-    N_TRIALS = 1000
+    N_TRIALS = 100
     loop = asyncio.get_event_loop()
 
     async_session_results = loop.run_until_complete(test_asyncsession(N_TRIALS))
