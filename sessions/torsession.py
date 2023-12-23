@@ -127,6 +127,30 @@ class TorSession(_Session):
         self._headers = value
 
 
+    def check_service(self):
+        from psutil import process_iter
+        if not any(process.name() == "tor" for process in process_iter()):
+            from psutil import Popen
+            from os import devnull
+            tor = Popen([
+                "/usr/bin/tor",
+                "-f", "/etc/tor/torrc",
+                "--runasdaemon", "1"
+            ], stdout=open(devnull, 'w'), stderr=open(devnull, 'w'))
+
+            if not tor.is_running():
+                return self.check_service()
+        return
+
+    def new_id(func):
+        def wrapper(self, *args, **kwargs):
+            with Controller.from_port(port=self.tor_cport) as controller:
+                controller.authenticate(password=self.password)
+                controller.signal(Signal.NEWNYM)
+            return func(self, *args, **kwargs)
+        return wrapper
+
+
     def check_ip(self):
         my_ip = self.get(self.RNG.choice(_IP_APIS)).text
         return my_ip

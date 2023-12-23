@@ -129,11 +129,11 @@ class AsyncSession(_ClientSession):
 
 
     async def post(self, url, **kwargs):
-        return await self.request(url, "POST", **kwargs)
+        return await super().request("POST", url, **kwargs)
 
 
     async def put(self, url, **kwargs):
-        return await self.request(url, "PUT", **kwargs)
+        return await super().request("PUT", url, **kwargs)
 
 
     async def patch(self, url, **kwargs):
