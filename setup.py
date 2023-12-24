@@ -8,7 +8,7 @@ setup(
         "orjson",
         "requests",
         "httpx[http2]",
-        "aiohttp[speedups]"
+        "aiohttp[speedups]",
         "stem",
     ],
     extras_require={

@@ -8,8 +8,8 @@ from .useragents import UserAgents
 
 class Session(Client):
     def __init__(self, headers={}, http2=True, **kwargs):
-        self._headers = headers
         super().__init__(headers=headers, http2=http2, **kwargs)
+        self._headers = headers
 
 
     def __enter__(self):

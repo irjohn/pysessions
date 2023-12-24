@@ -87,35 +87,35 @@ class AsyncSession(ClientSession):
     async def requests(self, urls, method="GET"):
         async with asyncio.TaskGroup() as tg:
             tasks = tuple(tg.create_task(self.request(url, method=method) for url in urls))
-        return tasks
+        return tuple(task.result() for task in tasks)
 
-
-    async def get(self, url, **kwargs):
-        return await self.request(url, "GET", **kwargs)
-
-
-    async def head(self, url, **kwargs):
-        return await self.request(url, "HEAD", **kwargs)
-
-
-    async def options(self, url, **kwargs):
-        return await self.request(url, "OPTIONS", **kwargs)
-
-
-    async def delete(self, url, **kwargs):
-        return await self.request(url, "DELETE", **kwargs)
-
-
-    async def post(self, url, **kwargs):
-        return await self.request(url, "POST", **kwargs)
-    
-
-    async def put(self, url, **kwargs):
-        return await self.request(url, "PUT", **kwargs)
-    
-
-    async def patch(self, url, **kwargs):
-        return await self.request(url, "PATCH", **kwargs)
+#
+    #async def get(self, url, **kwargs):
+    #    return await self.request(url, "GET", **kwargs)
+#
+#
+    #async def head(self, url, **kwargs):
+    #    return await self.request(url, "HEAD", **kwargs)
+#
+#
+    #async def options(self, url, **kwargs):
+    #    return await self.request(url, "OPTIONS", **kwargs)
+#
+#
+    #async def delete(self, url, **kwargs):
+    #    return await self.request(url, "DELETE", **kwargs)
+#
+#
+    #async def post(self, url, **kwargs):
+    #    return await self.request(url, "POST", **kwargs)
+    #
+#
+    #async def put(self, url, **kwargs):
+    #    return await self.request(url, "PUT", **kwargs)
+    #
+#
+    #async def patch(self, url, **kwargs):
+    #    return await self.request(url, "PATCH", **kwargs)
 
 
 class AsyncClient(_AsyncClient):
