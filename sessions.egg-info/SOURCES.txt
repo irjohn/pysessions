@@ -1,0 +1,14 @@
+LICENSE
+setup.py
+sessions/__init__.py
+sessions/asyncsession.py
+sessions/objects.py
+sessions/session.py
+sessions/torsession.py
+sessions/useragents.py
+sessions/variables.py
+sessions.egg-info/PKG-INFO
+sessions.egg-info/SOURCES.txt
+sessions.egg-info/dependency_links.txt
+sessions.egg-info/requires.txt
+sessions.egg-info/top_level.txt

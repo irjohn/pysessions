@@ -39,7 +39,7 @@ class AsyncSession(_ClientSession):
 
     async def __aenter__(self):
         return self
-    
+
 
     async def __aexit__(self, exc_type, exc_value, exc_traceback):
         if exc_traceback:
@@ -95,7 +95,7 @@ class AsyncSession(_ClientSession):
 
 
     async def request(self, url, method, headers=None, *, bar=None, **kwargs):
-        async with super().request(method, url, headers=headers or self.headers, **kwargs) as response:                      
+        async with super().request(method, url, headers=headers or self.headers, **kwargs) as response:
             resp = await self.retrieve_response(response)
             if bar is not None:
                 bar()
@@ -130,16 +130,16 @@ class AsyncSession(_ClientSession):
 
     async def post(self, url, **kwargs):
         return await self.request(url, "POST", **kwargs)
-    
+
 
     async def put(self, url, **kwargs):
         return await self.request(url, "PUT", **kwargs)
-    
+
 
     async def patch(self, url, **kwargs):
         return await self.request(url, "PATCH", **kwargs)
 
-    
+
 
 class AsyncClient(_AsyncClient):
     def __init__(self, headers={}, http2=True, **kwargs):
@@ -149,7 +149,7 @@ class AsyncClient(_AsyncClient):
 
     async def __aenter__(self):
         return self
-    
+
 
     async def __aexit__(self, *args):
         await self.aclose()
@@ -188,11 +188,11 @@ class AsyncClient(_AsyncClient):
 
     async def post(self, url, **kwargs):
         return await self.request("POST", url, **kwargs)
-    
+
 
     async def put(self, url, **kwargs):
         return await self.request("PUT", url, **kwargs)
-    
+
 
     async def patch(self, url, **kwargs):
         return await self.request("PATCH", url, **kwargs)

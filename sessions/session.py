@@ -24,14 +24,14 @@ class Session(_Client):
 
     def __enter__(self):
         return self
-    
+
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
         if exc_traceback:
             import traceback
             traceback.print_exception(exc_type, exc_value, exc_traceback)
         self.close()
-    
+
 
     @property
     def headers(self):
@@ -48,7 +48,7 @@ class Session(_Client):
         if bar is not None:
             bar()
         return results
-    
+
 
     def requests(self, urls, method="GET", headers=None, progress=False, **kwargs):
         if progress:
@@ -77,11 +77,11 @@ class Session(_Client):
 
     def post(self, url, **kwargs):
         return self.request("POST", url, **kwargs)
-    
+
 
     def put(self, url, **kwargs):
         return self.request("PUT", url, **kwargs)
-    
+
 
     def patch(self, url, **kwargs):
         return self.request("PATCH", url, **kwargs)
