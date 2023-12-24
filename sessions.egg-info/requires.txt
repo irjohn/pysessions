@@ -1,9 +1,0 @@
-orjson
-requests
-httpx[http2]
-aiohttp[speedups]
-stem
-redis[hiredis]
-alive_progress
-aiomisc
-retry
