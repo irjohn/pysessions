@@ -1,5 +1,0 @@
-aiohttp[speedups]
-httpx[http2]
-orjson
-requests
-stem
