@@ -1,0 +1,13 @@
+Metadata-Version: 2.1
+Name: sessions
+Version: 0.1.1
+License-File: LICENSE
+Requires-Dist: orjson
+Requires-Dist: requests
+Requires-Dist: httpx[http2]
+Requires-Dist: aiohttp[speedups]
+Requires-Dist: stem
+Requires-Dist: redis[hiredis]
+Requires-Dist: alive_progress
+Requires-Dist: aiomisc
+Requires-Dist: retry
