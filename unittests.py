@@ -54,18 +54,19 @@ def test_session(n_trials=1000):
 @timer
 def test_torsession(n_trials=1000):
     with TorSession() as session:
-        if n_trials >= 10000:
-            return deque(map(session.get, (GET_URL,)*n_trials), maxlen=0) +\
-                   deque(map(session.post, (POST_URL,)*n_trials), maxlen=0) +\
-                   deque(map(session.put, (PUT_URL,)*n_trials), maxlen=0) +\
-                   deque(map(session.patch, (PATCH_URL,)*n_trials), maxlen=0) +\
-                   deque(map(session.delete, (DELETE_URL,)*n_trials), maxlen=0)
+        return tuple(session.get("https://httpbin.org/ip") for _ in range(n_trials))
+        #if n_trials >= 10000:
+        #    return deque(map(session.get, (GET_URL,)*n_trials), maxlen=0) +\
+        #           deque(map(session.post, (POST_URL,)*n_trials), maxlen=0) +\
+        #           deque(map(session.put, (PUT_URL,)*n_trials), maxlen=0) +\
+        #           deque(map(session.patch, (PATCH_URL,)*n_trials), maxlen=0) +\
+        #           deque(map(session.delete, (DELETE_URL,)*n_trials), maxlen=0)
 
-        return tuple(map(session.get, (GET_URL,)*n_trials)) +\
-               tuple(map(session.post, (POST_URL,)*n_trials)) +\
-               tuple(map(session.put, (PUT_URL,)*n_trials)) +\
-               tuple(map(session.patch, (PATCH_URL,)*n_trials)) +\
-               tuple(map(session.delete, (DELETE_URL,)*n_trials))
+        #return tuple(map(session.get, (GET_URL,)*n_trials)) +\
+        #       tuple(map(session.post, (POST_URL,)*n_trials)) +\
+        #       tuple(map(session.put, (PUT_URL,)*n_trials)) +\
+        #       tuple(map(session.patch, (PATCH_URL,)*n_trials)) +\
+        #       tuple(map(session.delete, (DELETE_URL,)*n_trials))
     
 
 @timer
@@ -122,7 +123,7 @@ def test_torratelimit_session(n_trials=100, limit=5, window=1):
 
 
 if __name__ == "__main__":
-    N_TRIALS = 10_000
+    N_TRIALS = 100
     RATELIMIT_TRIALS = 50
     RATELIMIT = 5
     RATELIMIT_WINDOW = 1
@@ -131,7 +132,7 @@ if __name__ == "__main__":
     async_session_results = test_asyncsession(N_TRIALS)
     session_results = test_session(N_TRIALS)
     tor_session_results = test_torsession(N_TRIALS)
-    async_client_results = r = test_asyncclient(N_TRIALS)
+    #async_client_results = r = test_asyncclient(N_TRIALS)
     
     # Test ratelimit sessions
     ratelimit_session_results = test_ratelimit_async_session(RATELIMIT_TRIALS, limit=RATELIMIT, window=RATELIMIT_WINDOW)

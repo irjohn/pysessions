@@ -12,8 +12,12 @@ from stem.control import (
     Controller as _Controller
 )
 
-from httpx import (
-    Client as _Client,
+from requests import (
+    Session as _Session,
+)
+
+from time import (
+    sleep as _sleep,
 )
 
 from .useragents import (
@@ -28,7 +32,16 @@ from .ratelimit import (
     Ratelimit as _Ratelimit,
 )
 
-class TorSession(_Client):
+def _new_id(func):
+    def wrapper(self, *args, **kwargs):
+        with _Controller.from_port(port=self.tor_cport) as controller:
+            controller.authenticate(password=self.password)
+            controller.signal(_Signal.NEWNYM)
+        return func(self, *args, **kwargs)
+    return wrapper
+
+
+class TorSession(_Session):
     RNG = _Random()
 
     """
@@ -43,27 +56,27 @@ class TorSession(_Client):
 
     def __init__(self, tor_ports=(9000, 9001, 9002, 9003, 9004), tor_cport=9051,
                  password=None, autochange_id=5, headers={}, **kwargs):
-        self._headers = headers
         self.check_service()
-        super().__init__(**kwargs)
         self.tor_ports = tor_ports
         self.tor_cport = tor_cport
         self.password = password
         self.autochange_id = autochange_id
         self.ports = _cycle(tor_ports)
+        super().__init__(**kwargs)
         self.headers = headers
-        
+
 
     @property
     def headers(self):
         return _UserAgents.headers | self._headers
-    
+
 
     @headers.setter
     def headers(self, value):
         self._headers = value
-    
-    
+
+
+
     def check_service(self):
         from psutil import process_iter as _process_iter
         if not any(process.name() == "tor" for process in _process_iter()):
@@ -78,27 +91,18 @@ class TorSession(_Client):
                 "-f", "/etc/tor/torrc",
                 "--runasdaemon", "1"
             ], stdout=_DEVNULL, stderr=_DEVNULL)
-
+            _sleep(3)
             if not tor.is_running():
                 return self.check_service()
         return
-    
-    @staticmethod
-    def new_id(func):     
-        def wrapper(self, *args, **kwargs):         
-            with _Controller.from_port(port=self.tor_cport) as controller:
-                controller.authenticate(password=self.password)
-                controller.signal(_Signal.NEWNYM)
-            return func(self, *args, **kwargs)
-        return wrapper
 
 
     def check_ip(self):
         my_ip = self.get(self.RNG.choice(_IP_APIS)).text
         return my_ip
-    
 
-    @new_id
+
+    @_new_id
     def request(self, method, url, headers=None, **kwargs):
         port = next(self.ports)
 
@@ -112,7 +116,7 @@ class TorSession(_Client):
         }
 
         try:
-            resp = super().request(method, url, headers=headers or self.headers, **kwargs)
+            resp = super().request(method, url, headers=headers or self.headers, proxies=proxy, **kwargs)
         except Exception as e:
             print(e)
             return self.request(method, url, proxy=proxy, **kwargs)
@@ -154,7 +158,7 @@ class TorRatelimitSession(TorSession, _Ratelimit):
         _Ratelimit.__init__(self, limit, window)
         self._key = f"TorRatelimitSession:{self._ID}"
 
-    
+
     def request(self, method, url, *, headers=None, **kwargs):
         result =  super(TorSession, self).request(method, url, headers=headers, **kwargs)
         self.increment()

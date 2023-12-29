@@ -28,6 +28,7 @@ from asyncio import (
 
 from databases import BaseAIORedis, BaseRedis
 
+
 _NEED_TO_START = True
 for process in _process_iter():
     if "redis-server unixsocket:/tmp/ratelimit.sock" in process.cmdline():
@@ -49,6 +50,13 @@ if _NEED_TO_START:
         ).pid
     )
 
+def _server_handler():
+    _REDIS.send_signal(_SIGKILL)
+    if _os.path.exists("/tmp/ratelimit.sock"):
+        _os.remove("/tmp/ratelimit.sock")
+
+
+_register(_server_handler)
 
 class ratelimit(BaseRedis):
     _REDIS = _REDIS
@@ -93,18 +101,6 @@ class ratelimit(BaseRedis):
         self.zremrangebyscore(self._key, 0, self.edge)
         count = self.zcard(self._key)
         return count < self.limit
-
-
-    @classmethod
-    def _ratelimit_signal_handler(cls, signum=None, frame=None):
-        cls._REDIS.send_signal(_SIGKILL)
-        if _os.path.exists("/tmp/ratelimit.sock"):
-            _os.remove("/tmp/ratelimit.sock")
-
-
-    @classmethod    
-    def _register_handlers(cls): 
-        _register(cls._ratelimit_signal_handler)
 
 
     def increment(self):
@@ -155,18 +151,6 @@ class aratelimit(BaseAIORedis):
         return self.current_timestampns - self.window
 
 
-    @classmethod
-    def _aratelimit_signal_handler(cls, signum=None, frame=None):
-        cls._REDIS.send_signal(_SIGKILL)
-        if _os.path.exists("/tmp/ratelimit.sock"):
-            _os.remove("/tmp/ratelimit.sock")
-
-
-    @classmethod
-    def _register_handlers(cls):
-        _register(cls._aratelimit_signal_handler)
-
-
     async def ok(self):
         await self.zremrangebyscore(self._key, 0, self.edge)
         count = await self.zcard(self._key)
@@ -189,8 +173,4 @@ class Ratelimit(ratelimit):
 
 class ARatelimit(aratelimit):
     def __call__(self):
-        raise TypeError("'Aratelimit' object is not callable")
-
-
-ratelimit._register_handlers()
-aratelimit._register_handlers()
+        raise TypeError("'ARatelimit' object is not callable")
