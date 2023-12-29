@@ -1,4 +1,6 @@
-import asyncio as  _asyncio
+from asyncio import (
+    TaskGroup as _TaskGroup
+)
 
 from orjson import (
     dumps as _dumps,
@@ -15,13 +17,18 @@ from httpx import (
 from .ratelimit import (
     ARatelimit as _ARatelimit,
 )
+
 from .useragents import (
     UserAgents as _UserAgents,
 )
+
 from .objects import (
     AsyncResponse as _AsyncResponse,
 )
 
+from os import (
+    getpid as _getpid,
+)
     
 
 class AsyncSession(_ClientSession):
@@ -93,7 +100,7 @@ class AsyncSession(_ClientSession):
 
     # NEEDS FIXED
     async def requests(self, urls, method="GET"):
-        async with _asyncio.TaskGroup() as tg:
+        async with _TaskGroup() as tg:
             tasks = tuple(tg.create_task(self.request(url, method=method) for url in urls))
         return tuple(task.result() for task in tasks)
 
@@ -135,7 +142,7 @@ class RatelimitAsyncSession(AsyncSession, _ARatelimit):
         self._window = window
         AsyncSession.__init__(self, *args, **kwargs)
         _ARatelimit.__init__(self, limit, window)
-        self._key = f"RatelimitAsyncSession:{self._ID}"
+        self._key = f"RatelimitAsyncSession:{self._ID}:{_getpid()}"
 
     
     async def request(self, url, method, headers=None, **kwargs):
@@ -211,7 +218,7 @@ class RatelimitAsyncClient(AsyncClient, _ARatelimit):
         self._window = window
         AsyncClient.__init__(self, *args, **kwargs)
         _ARatelimit.__init__(self, limit, window)
-        self._key = self._ID
+        self._key = f"RatelimitAsyncClient:{self._ID}:{_getpid()}"
 
 
     async def request(self, method, url, *, headers=None, **kwargs):

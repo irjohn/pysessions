@@ -15,13 +15,7 @@ class UserAgents:
 
     @classmethod
     def set_agents(cls, n_requests=None):
-        cls.agents = (
-            ua
-            for ua in cls.RNG.choices(
-                _USER_AGENTS,
-                k=n_requests or 250
-            )
-        )
+        cls.agents = (ua for ua in cls.RNG.choices(_USER_AGENTS, k=n_requests or 250))
 
 
     @classmethod

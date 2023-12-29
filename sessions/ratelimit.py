@@ -26,13 +26,17 @@ from asyncio import (
     sleep as _asleep
 )
 
-from databases import BaseAIORedis, BaseRedis
+from databases import (
+    BaseAIORedis as _BaseAIORedis, 
+    BaseRedis as _BaseRedis,
+)
 
+_SOCKET_PATH = f"/tmp/ratelimit-{_os.getpid()}.sock"
 
 _NEED_TO_START = True
 for process in _process_iter():
-    if "redis-server unixsocket:/tmp/ratelimit.sock" in process.cmdline():
-        _pid = process.id
+    if f"redis-server unixsocket:{_SOCKET_PATH}" in process.cmdline():
+        _pid = process.pid
         _NEED_TO_START = False
         _REDIS = _Process(_pid)
 
@@ -42,7 +46,7 @@ if _NEED_TO_START:
         _Popen([
             "redis-server", 
             "--port", "0", 
-            "--unixsocket", "/tmp/ratelimit.sock", 
+            "--unixsocket", _SOCKET_PATH, 
             "--unixsocketperm", "777", 
             "--save", "''"
         ], 
@@ -52,19 +56,19 @@ if _NEED_TO_START:
 
 def _server_handler():
     _REDIS.send_signal(_SIGKILL)
-    if _os.path.exists("/tmp/ratelimit.sock"):
-        _os.remove("/tmp/ratelimit.sock")
+    if _os.path.exists(_SOCKET_PATH):
+        _os.remove(_SOCKET_PATH)
 
 
 _register(_server_handler)
 
-class ratelimit(BaseRedis):
+class ratelimit(_BaseRedis):
     _REDIS = _REDIS
 
     def __init__(self, limit, window):
         self._limit = limit
         self._window = window * 1000000000
-        super().__init__(unix_socket_path="/tmp/ratelimit.sock", db=0, decode_responses=False)
+        super().__init__(unix_socket_path=_SOCKET_PATH, db=0, decode_responses=False)
 
 
     def __call__(self, func):
@@ -112,14 +116,14 @@ class ratelimit(BaseRedis):
 
 
 
-class aratelimit(BaseAIORedis):
+class aratelimit(_BaseAIORedis):
     _REDIS = _REDIS
 
     def __init__(self, limit,  window):
         self._limit = limit
         self._window = window * 1000000000
         self.semaphore = Semaphore(limit)
-        super().__init__(unix_socket_path="/tmp/ratelimit.sock", db=0, decode_responses=False)
+        super().__init__(unix_socket_path=_SOCKET_PATH, db=0, decode_responses=False)
 
 
     def __call__(self, func):

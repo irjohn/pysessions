@@ -5,15 +5,20 @@ from httpx import (
 from .ratelimit import (
     Ratelimit as _Ratelimit
 )
+
 from .useragents import (
     UserAgents as _UserAgents
+)
+
+from os import (
+    getpid as _getpid,
 )
 
 
 class Session(_Client):
     def __init__(self, headers={}, http2=True, **kwargs):
-        super().__init__(headers=headers, http2=http2, **kwargs)
-        self._headers = headers
+        super().__init__(http2=http2, **kwargs)
+        self._headers = {k.title(): v for k, v in headers.items()}
 
 
     def __enter__(self):
@@ -76,7 +81,7 @@ class RatelimitSession(Session, _Ratelimit):
         self._window = window
         Session.__init__(self, *args, **kwargs)
         _Ratelimit.__init__(self, limit, window)
-        self._key = f"RatelimitSession:{self._ID}"
+        self._key = f"RatelimitSession:{self._ID}:{_getpid()}"
 
     
     def request(self, method, url, *, headers=None, **kwargs):

@@ -1,6 +1,11 @@
+from os import (
+    getpid as _getpid,
+)
+
 from random import (
     Random as _Random
 )
+
 from itertools import (
     cycle as _cycle
 )
@@ -8,6 +13,7 @@ from itertools import (
 from stem import (
     Signal as _Signal
 )
+
 from stem.control import (
     Controller as _Controller
 )
@@ -156,7 +162,7 @@ class TorRatelimitSession(TorSession, _Ratelimit):
         self._window = window
         TorSession.__init__(self, *args, **kwargs)
         _Ratelimit.__init__(self, limit, window)
-        self._key = f"TorRatelimitSession:{self._ID}"
+        self._key = f"TorRatelimitSession:{self._ID}:{_getpid()}"
 
 
     def request(self, method, url, *, headers=None, **kwargs):

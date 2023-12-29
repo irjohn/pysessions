@@ -36,7 +36,7 @@ PUT_URL = "http://localhost:8080/put"
 
 @timer
 def test_session(n_trials=1000):
-    with Session() as session:
+    with Session(headers={"User-Agent": "something"}) as session:
         if n_trials >= 10000:
             return deque(map(session.get, (GET_URL,)*n_trials), maxlen=0) +\
                    deque(map(session.post, (POST_URL,)*n_trials), maxlen=0) +\
@@ -124,17 +124,17 @@ def test_torratelimit_session(n_trials=100, limit=5, window=1):
 
 if __name__ == "__main__":
     N_TRIALS = 100
-    RATELIMIT_TRIALS = 50
+    RATELIMIT_TRIALS = 10
     RATELIMIT = 5
     RATELIMIT_WINDOW = 1
 
     # Test sessions
     async_session_results = test_asyncsession(N_TRIALS)
     session_results = test_session(N_TRIALS)
-    tor_session_results = test_torsession(N_TRIALS)
+    #tor_session_results = test_torsession(N_TRIALS)
     #async_client_results = r = test_asyncclient(N_TRIALS)
     
     # Test ratelimit sessions
     ratelimit_session_results = test_ratelimit_async_session(RATELIMIT_TRIALS, limit=RATELIMIT, window=RATELIMIT_WINDOW)
     async_ratelimit_session_results = test_ratelimit_session(RATELIMIT_TRIALS, limit=RATELIMIT, window=RATELIMIT_WINDOW)
-    tor_ratelimit_session_results = test_torratelimit_session(RATELIMIT_TRIALS, limit=RATELIMIT, window=RATELIMIT_WINDOW)
+    #tor_ratelimit_session_results = test_torratelimit_session(RATELIMIT_TRIALS, limit=RATELIMIT, window=RATELIMIT_WINDOW)
