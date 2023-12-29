@@ -1,11 +1,13 @@
-from random import SystemRandom
+from random import (
+    Random as _Random,
+)
 
-from httpx import Headers
-
-from .variables import USER_AGENTS
+from .variables import(
+    USER_AGENTS as _USER_AGENTS,
+)
 
 class UserAgents:
-    RNG = SystemRandom()
+    RNG = _Random()
 
     def __init__(self, n_requests=None):
         self.set_agents(n_requests)
@@ -16,7 +18,7 @@ class UserAgents:
         cls.agents = (
             ua
             for ua in cls.RNG.choices(
-                USER_AGENTS,
+                _USER_AGENTS,
                 k=n_requests or 250
             )
         )

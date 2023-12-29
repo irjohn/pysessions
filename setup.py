@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sessions",
-    version="0.1.0",
+    version="0.1.1",
     packages=find_packages(),
     install_requires=[
         "orjson",
@@ -10,6 +10,7 @@ setup(
         "httpx[http2]",
         "aiohttp[speedups]",
         "stem",
+        "redis[hiredis]"
     ],
     extras_require={
 
