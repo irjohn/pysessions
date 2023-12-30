@@ -131,7 +131,7 @@ if __name__ == "__main__":
     # Test sessions
     async_session_results = test_asyncsession(N_TRIALS)
     session_results = test_session(N_TRIALS)
-    #tor_session_results = test_torsession(N_TRIALS)
+    tor_session_results = test_torsession(5)
     #async_client_results = r = test_asyncclient(N_TRIALS)
     
     # Test ratelimit sessions

@@ -3,11 +3,23 @@ from os import (
 )
 
 from random import (
-    Random as _Random
+    Random as _Random,
 )
 
 from itertools import (
-    cycle as _cycle
+    cycle as _cycle,
+)
+
+from atexit import (
+    register as _register,
+)
+
+from time import (
+    sleep as _sleep,
+)
+
+from functools import  (
+    wraps as _wraps,
 )
 
 from stem import (
@@ -15,36 +27,57 @@ from stem import (
 )
 
 from stem.control import (
-    Controller as _Controller
+    Controller as _Controller,
 )
 
 from requests import (
     Session as _Session,
 )
 
-from time import (
-    sleep as _sleep,
-)
 
 from .useragents import (
-    UserAgents as _UserAgents
+    UserAgents as _UserAgents,
 )
 
 from .variables import (
-    IP_APIS as _IP_APIS
+    IP_APIS as _IP_APIS,
 )
 
 from .ratelimit import (
     Ratelimit as _Ratelimit,
 )
 
+
+def _check_tor_service():
+    from psutil import process_iter as _process_iter
+    if not any(process.name() == "tor" for process in _process_iter()):
+        from psutil import (
+            Popen as _Popen
+        )
+        from subprocess import (
+            DEVNULL as _DEVNULL,
+        )
+        tor = _Popen([
+            "/usr/bin/tor",
+            "-f", "/etc/tor/torrc",
+            "--runasdaemon", "1"
+        ], stdout=_DEVNULL, stderr=_DEVNULL)
+        _sleep(3)
+        if not tor.is_running():
+            return _check_tor_service()
+    return
+
+_check_tor_service()
+
+
 def _new_id(func):
+    @_wraps(func)
     def wrapper(self, *args, **kwargs):
-        with _Controller.from_port(port=self.tor_cport) as controller:
-            controller.authenticate(password=self.password)
-            controller.signal(_Signal.NEWNYM)
+        self._controller.authenticate(password=self.password)
+        self._controller.signal(_Signal.NEWNYM)
         return func(self, *args, **kwargs)
     return wrapper
+
 
 
 class TorSession(_Session):
@@ -62,14 +95,30 @@ class TorSession(_Session):
 
     def __init__(self, tor_ports=(9000, 9001, 9002, 9003, 9004), tor_cport=9051,
                  password=None, autochange_id=5, headers={}, **kwargs):
-        self.check_service()
-        self.tor_ports = tor_ports
-        self.tor_cport = tor_cport
-        self.password = password
+        self._tor_ports = tor_ports
+        self._tor_cport = tor_cport
+        self._password = password
         self.autochange_id = autochange_id
         self.ports = _cycle(tor_ports)
         super().__init__(**kwargs)
         self.headers = headers
+        self._start_controller()
+        _register(lambda: self._controller.close())
+
+
+    @property
+    def tor_ports(self):
+        return self._tor_ports
+
+
+    @property
+    def tor_cport(self):
+        return self._tor_cport
+
+
+    @property
+    def password(self):
+        return self._password
 
 
     @property
@@ -82,30 +131,13 @@ class TorSession(_Session):
         self._headers = value
 
 
-
-    def check_service(self):
-        from psutil import process_iter as _process_iter
-        if not any(process.name() == "tor" for process in _process_iter()):
-            from psutil import (
-                Popen as _Popen
-            )
-            from subprocess import (
-                DEVNULL as _DEVNULL,
-            )
-            tor = _Popen([
-                "/usr/bin/tor",
-                "-f", "/etc/tor/torrc",
-                "--runasdaemon", "1"
-            ], stdout=_DEVNULL, stderr=_DEVNULL)
-            _sleep(3)
-            if not tor.is_running():
-                return self.check_service()
-        return
-
-
     def check_ip(self):
         my_ip = self.get(self.RNG.choice(_IP_APIS)).text
         return my_ip
+    
+
+    def _start_controller(self):
+        self._controller = _Controller.from_port(port=self.tor_cport)
 
 
     @_new_id
@@ -115,6 +147,11 @@ class TorSession(_Session):
         # if using requests_tor as drop in replacement for requests remove any user set proxy
         if kwargs.__contains__("proxy"):
             del kwargs["proxy"]
+
+
+        if kwargs.__contains__("proxies"):
+            del kwargs["proxies"]
+
 
         proxy = {
             "http": f"socks5h://localhost:{port}",
