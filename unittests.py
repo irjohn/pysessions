@@ -1,11 +1,6 @@
 import asyncio
 from collections import deque
 
-from utils import (
-    timer,
-    Urls
-)
-
 from sessions import (
     Session,
     TorSession,
@@ -14,6 +9,11 @@ from sessions import (
     AsyncClient,
     RatelimitSession,
     RatelimitAsyncSession,
+)
+
+from sessions.utils import (
+    Urls,
+    timer,
 )
 
 from asynchronizer import asynchronize
