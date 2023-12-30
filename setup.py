@@ -11,6 +11,7 @@ setup(
         "aiohttp[speedups]",
         "stem",
         "redis[hiredis]"
+        "alive_progress"
     ],
     extras_require={
 

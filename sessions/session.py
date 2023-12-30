@@ -1,5 +1,14 @@
+from os import (
+    getpid as _getpid,
+)
+
 from httpx import (
     Client as _Client,
+)
+
+
+from alive_progress import (
+    alive_bar as _alive_bar,
 )
 
 from .ratelimit import (
@@ -8,10 +17,6 @@ from .ratelimit import (
 
 from .useragents import (
     UserAgents as _UserAgents
-)
-
-from os import (
-    getpid as _getpid,
 )
 
 
@@ -25,9 +30,11 @@ class Session(_Client):
         return self
     
 
-    def __exit__(self, *args):
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        if exc_traceback:
+            import traceback
+            traceback.print_exception(exc_type, exc_value, exc_traceback)
         self.close()
-        return
     
 
     @property
@@ -40,8 +47,20 @@ class Session(_Client):
         self._headers = value
 
 
-    def request(self, method, url, *, headers=None, **kwargs):
-        return super().request(method, url, headers=headers or self.headers, **kwargs)
+    def request(self, method, url, *, headers=None, bar=None, **kwargs):
+        results = super().request(method, url, headers=headers or self.headers, **kwargs)
+        if bar is not None:
+            bar()
+        return results
+    
+
+    def requests(self, urls, method="GET", headers=None, progress=False, **kwargs):
+        if progress:
+            with _alive_bar(len(urls)) as bar:
+                results = tuple(self.request(method, url, headers=headers, bar=bar, **kwargs) for url in urls)
+        else:
+            results = tuple(self.request(method, url, headers=headers, **kwargs) for url in urls)
+        return results
 
 
     def get(self, url, **kwargs):
@@ -71,6 +90,7 @@ class Session(_Client):
     def patch(self, url, **kwargs):
         return self.request("PATCH", url, **kwargs)
     
+
 
 class RatelimitSession(Session, _Ratelimit):
     _ID = 0

@@ -1,9 +1,17 @@
+from os import (
+    getpid as _getpid,
+)
+
 from asyncio import (
-    TaskGroup as _TaskGroup
+    gather as _gather,
 )
 
 from orjson import (
     dumps as _dumps,
+)
+
+from alive_progress import (
+    alive_bar as _alive_bar,
 )
 
 from aiohttp import (
@@ -26,9 +34,7 @@ from .objects import (
     AsyncResponse as _AsyncResponse,
 )
 
-from os import (
-    getpid as _getpid,
-)
+
     
 
 class AsyncSession(_ClientSession):
@@ -41,9 +47,11 @@ class AsyncSession(_ClientSession):
         return self
     
 
-    async def __aexit__(self, *args):
+    async def __aexit__(self, exc_type, exc_value, exc_traceback):
+        if exc_traceback:
+            import traceback
+            traceback.print_exception(exc_type, exc_value, exc_traceback)
         await self.close()
-        return
 
 
     @property
@@ -59,7 +67,7 @@ class AsyncSession(_ClientSession):
     @staticmethod
     async def retrieve_response(resp):
         try:
-            text = await resp.json()
+            text = await resp.text()
         except:
             text = None
         try:
@@ -92,17 +100,22 @@ class AsyncSession(_ClientSession):
         return data
 
 
-    async def request(self, url, method, headers=None, **kwargs):
+    async def request(self, url, method, headers=None, *, bar=None, **kwargs):
         async with super().request(method, url, headers=headers or self.headers, **kwargs) as response:                      
             resp = await self.retrieve_response(response)
+            if bar is not None:
+                bar()
             return _AsyncResponse(**resp)
 
 
     # NEEDS FIXED
-    async def requests(self, urls, method="GET"):
-        async with _TaskGroup() as tg:
-            tasks = tuple(tg.create_task(self.request(url, method=method) for url in urls))
-        return tuple(task.result() for task in tasks)
+    async def requests(self, urls, method="GET", *, headers=None, progress=False, **kwargs):
+        if progress:
+            with _alive_bar(len(urls)) as bar:
+                results = await _gather(*tuple(self.request(url, method, headers=headers, bar=bar, **kwargs) for url in urls))
+        else:
+            results = await _gather(*tuple(self.request(url, method, headers=headers, **kwargs) for url in urls))
+        return results
 
 
     async def get(self, url, **kwargs):
