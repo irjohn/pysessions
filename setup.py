@@ -10,8 +10,8 @@ setup(
         "httpx[http2]",
         "aiohttp[speedups]",
         "stem",
-        "redis[hiredis]"
-        "alive_progress"
+        "redis[hiredis]",
+        "alive_progress",
     ],
     extras_require={
 
