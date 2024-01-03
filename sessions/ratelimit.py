@@ -63,13 +63,13 @@ if _NEED_TO_START:
         ).pid
     )
 
+
+@_register
 def _server_handler():
     _REDIS.send_signal(_SIGKILL)
     if _os.path.exists(_SOCKET_PATH):
         _os.remove(_SOCKET_PATH)
 
-
-_register(_server_handler)
 
 class ratelimit(_BaseRedis):
     _REDIS = _REDIS
