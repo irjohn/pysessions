@@ -31,6 +31,14 @@ from databases import (
     BaseRedis as _BaseRedis,
 )
 
+from .session import Session as _Session
+from .torsession import TorSession as _TorSession
+from .asyncsession import (
+    AsyncSession as _AsyncSession,
+    AsyncClient as _AsyncClient,
+    AsyncResponse as _AsyncResponse,
+)
+
 _SOCKET_PATH = f"/tmp/ratelimit-{_os.getpid()}.sock"
 
 _NEED_TO_START = True
@@ -178,3 +186,76 @@ class Ratelimit(ratelimit):
 class ARatelimit(aratelimit):
     def __call__(self):
         raise TypeError("'ARatelimit' object is not callable")
+
+
+class RatelimitSession(_Session, Ratelimit):
+    _ID = 0
+
+    def __init__(self, *args, limit=10, window=1, **kwargs):
+        RatelimitSession._ID += 1
+        self._limit = limit
+        self._window = window
+        _Session.__init__(self, *args, **kwargs)
+        Ratelimit.__init__(self, limit, window)
+        self._key = f"RatelimitSession:{self._ID}:{_os.getpid()}"
+
+    
+    def request(self, method, url, *, headers=None, **kwargs):
+        result =  _Session.request(method, url, headers=headers or self.headers, **kwargs)
+        self.increment()
+        return result
+    
+
+class RatelimitAsyncSession(_AsyncSession, ARatelimit):
+    _ID = 0
+
+    def __init__(self, *args, limit=10, window=1, **kwargs):
+        RatelimitAsyncSession._ID += 1
+        self._limit = limit
+        self._window = window
+        _AsyncSession.__init__(self, *args, **kwargs)
+        ARatelimit.__init__(self, limit, window)
+        self._key = f"RatelimitAsyncSession:{self._ID}:{_os.getpid()}"
+
+    
+    async def request(self, url, method, headers=None, **kwargs):
+        async with _AsyncSession.request(method, url, headers=headers or self.headers, **kwargs) as response:                      
+            resp = await self.retrieve_response(response)
+            await self.increment()
+            return _AsyncResponse(**resp)
+
+
+class RatelimitAsyncClient(_AsyncClient, ARatelimit):
+    _ID = 0
+
+    def __init__(self, *args, limit=10, window=1, **kwargs):
+        RatelimitAsyncClient._ID += 1
+        self._limit = limit
+        self._window = window
+        _AsyncClient.__init__(self, *args, **kwargs)
+        ARatelimit.__init__(self, limit, window)
+        self._key = f"RatelimitAsyncClient:{self._ID}:{_os.getpid()}"
+
+
+    async def request(self, method, url, *, headers=None, **kwargs):
+        results = await _AsyncClient.request(method, url, headers=headers or self.headers, **kwargs)
+        await self.increment()
+        return results
+    
+
+class TorRatelimitSession(_TorSession, Ratelimit):
+    _ID = 0
+
+    def __init__(self, *args, limit=10, window=1, **kwargs):
+        TorRatelimitSession._ID += 1
+        self._limit = limit
+        self._window = window
+        _TorSession.__init__(self, *args, **kwargs)
+        Ratelimit.__init__(self, limit, window)
+        self._key = f"TorRatelimitSession:{self._ID}:{_os.getpid()}"
+
+
+    def request(self, method, url, *, headers=None, **kwargs):
+        result =  _TorSession.request(method, url, headers=headers, **kwargs)
+        self.increment()
+        return result

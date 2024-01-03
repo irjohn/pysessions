@@ -145,24 +145,6 @@ class AsyncSession(_ClientSession):
     async def patch(self, url, **kwargs):
         return await self.request(url, "PATCH", **kwargs)
 
-
-class RatelimitAsyncSession(AsyncSession, _ARatelimit):
-    _ID = 0
-
-    def __init__(self, *args, limit=10, window=1, **kwargs):
-        RatelimitAsyncSession._ID += 1
-        self._limit = limit
-        self._window = window
-        AsyncSession.__init__(self, *args, **kwargs)
-        _ARatelimit.__init__(self, limit, window)
-        self._key = f"RatelimitAsyncSession:{self._ID}:{_getpid()}"
-
-    
-    async def request(self, url, method, headers=None, **kwargs):
-        async with super(AsyncSession, self).request(method, url, headers=headers or self.headers, **kwargs) as response:                      
-            resp = await self.retrieve_response(response)
-            await self.increment()
-            return _AsyncResponse(**resp)
     
 
 class AsyncClient(_AsyncClient):
@@ -220,21 +202,3 @@ class AsyncClient(_AsyncClient):
 
     async def patch(self, url, **kwargs):
         return await self.request("PATCH", url, **kwargs)
-    
-
-class RatelimitAsyncClient(AsyncClient, _ARatelimit):
-    _ID = 0
-
-    def __init__(self, *args, limit=10, window=1, **kwargs):
-        RatelimitAsyncClient._ID += 1
-        self._limit = limit
-        self._window = window
-        AsyncClient.__init__(self, *args, **kwargs)
-        _ARatelimit.__init__(self, limit, window)
-        self._key = f"RatelimitAsyncClient:{self._ID}:{_getpid()}"
-
-
-    async def request(self, method, url, *, headers=None, **kwargs):
-        results = await super().request(method, url, headers=headers or self.headers, **kwargs)
-        await self.increment()
-        return results

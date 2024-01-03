@@ -11,10 +11,6 @@ from alive_progress import (
     alive_bar as _alive_bar,
 )
 
-from .ratelimit import (
-    Ratelimit as _Ratelimit
-)
-
 from .useragents import (
     UserAgents as _UserAgents
 )
@@ -89,22 +85,3 @@ class Session(_Client):
 
     def patch(self, url, **kwargs):
         return self.request("PATCH", url, **kwargs)
-    
-
-
-class RatelimitSession(Session, _Ratelimit):
-    _ID = 0
-
-    def __init__(self, *args, limit=10, window=1, **kwargs):
-        RatelimitSession._ID += 1
-        self._limit = limit
-        self._window = window
-        Session.__init__(self, *args, **kwargs)
-        _Ratelimit.__init__(self, limit, window)
-        self._key = f"RatelimitSession:{self._ID}:{_getpid()}"
-
-    
-    def request(self, method, url, *, headers=None, **kwargs):
-        result =  super().request(method, url, headers=headers or self.headers, **kwargs)
-        self.increment()
-        return result

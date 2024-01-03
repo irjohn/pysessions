@@ -43,10 +43,6 @@ from .variables import (
     IP_APIS as _IP_APIS,
 )
 
-from .ratelimit import (
-    Ratelimit as _Ratelimit,
-)
-
 
 def _check_tor_service():
     from psutil import process_iter as _process_iter
@@ -188,21 +184,3 @@ class TorSession(_Session):
 
     def head(self, url, **kwargs):
         return self.request("HEAD", url, **kwargs)
-
-
-class TorRatelimitSession(TorSession, _Ratelimit):
-    _ID = 0
-
-    def __init__(self, *args, limit=10, window=1, **kwargs):
-        TorRatelimitSession._ID += 1
-        self._limit = limit
-        self._window = window
-        TorSession.__init__(self, *args, **kwargs)
-        _Ratelimit.__init__(self, limit, window)
-        self._key = f"TorRatelimitSession:{self._ID}:{_getpid()}"
-
-
-    def request(self, method, url, *, headers=None, **kwargs):
-        result =  super(TorSession, self).request(method, url, headers=headers, **kwargs)
-        self.increment()
-        return result
