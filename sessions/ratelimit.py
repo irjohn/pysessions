@@ -36,8 +36,9 @@ from .torsession import TorSession as _TorSession
 from .asyncsession import (
     AsyncSession as _AsyncSession,
     AsyncClient as _AsyncClient,
-    AsyncResponse as _AsyncResponse,
 )
+from .objects import AsyncResponse as _AsyncResponse
+
 
 _SOCKET_PATH = f"/tmp/ratelimit-{_os.getpid()}.sock"
 

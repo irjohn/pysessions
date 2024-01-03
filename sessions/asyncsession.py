@@ -22,10 +22,6 @@ from httpx import (
     AsyncClient as _AsyncClient,
 )
 
-from .ratelimit import (
-    ARatelimit as _ARatelimit,
-)
-
 from .useragents import (
     UserAgents as _UserAgents,
 )
@@ -34,8 +30,6 @@ from .objects import (
     AsyncResponse as _AsyncResponse,
 )
 
-
-    
 
 class AsyncSession(_ClientSession):
     def __init__(self, *args, headers={}, skip_auto_headers="User-Agent", **kwargs):
