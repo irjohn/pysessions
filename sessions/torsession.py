@@ -144,9 +144,9 @@ class TorSession(_Session):
 
     def new_id(func):
         def wrapper(self, *args, **kwargs):
-            with Controller.from_port(port=self.tor_cport) as controller:
+            with _Controller.from_port(port=self.tor_cport) as controller:
                 controller.authenticate(password=self.password)
-                controller.signal(Signal.NEWNYM)
+                controller.signal(_Signal.NEWNYM)
             return func(self, *args, **kwargs)
         return wrapper
 
