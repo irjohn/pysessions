@@ -1,19 +1,9 @@
-from os import (
-    getpid as _getpid,
-)
+from os import getpid as _getpid
 
-from httpx import (
-    Client as _Client,
-)
+from httpx import Client as _Client
+from alive_progress import alive_bar as _alive_bar
 
-
-from alive_progress import (
-    alive_bar as _alive_bar,
-)
-
-from .useragents import (
-    UserAgents as _UserAgents
-)
+from .useragents import UserAgents as _UserAgents
 
 
 class Session(_Client):

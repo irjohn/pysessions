@@ -6,22 +6,21 @@ from pickle import (
     HIGHEST_PROTOCOL as _PICKLE_HIGHEST_PROTOCOL
 )
 
+from dotenv import dotenv_values as _dotenv_values
+from requests import Session
 from urllib.parse import (
     quote as _quote,
     unquote as _unquote,
 )
-from dotenv import dotenv_values as _dotenv_values
-from requests import Session
 
 from .useragents import UserAgents as _UserAgents
-
 
 _MODULE_DIR = _os.path.dirname(_os.path.abspath(__file__))
 _NORDVPN_SERVER_URL = "https://nordvpn.com/api/server"
 
+
 def _path(relative):
     return _os.path.join(_MODULE_DIR, relative)
-
 
 try:
     with open(_path("proxies.tuple"), "rb") as f:
@@ -45,7 +44,7 @@ class ProxySession(Session):
         self._rng = _Random()
         self.headers = headers or self.headers
 
-    
+
     @classmethod
     def update_proxies(cls):
         global _PROXIES
@@ -55,7 +54,7 @@ class ProxySession(Session):
         _PROXIES = tuple(server["domain"] for server in servers if server["features"]["proxy_ssl"])
         with open(_path("proxies.tuple"), "wb") as f:
             _dump(_PROXIES, f, protocol=_PICKLE_HIGHEST_PROTOCOL)
-    
+
 
     @property
     def proxies(self):
@@ -64,7 +63,7 @@ class ProxySession(Session):
             "http": f"http://{url}:89",
             "https": f"https://{url}:89"
         }
-    
+
 
     @proxies.setter
     def proxies(self, value):
@@ -77,7 +76,7 @@ class ProxySession(Session):
             return super(ProxySession, self).request(method, url, proxies=self.proxies, headers=headers, **kwargs)
         except:
             return self.request(method, url, **kwargs)
-        
+
 
     def get(self, url, **kwargs):
         return self.request("GET", url, **kwargs)
@@ -97,11 +96,11 @@ class ProxySession(Session):
 
     def post(self, url, **kwargs):
         return self.request("POST", url, **kwargs)
-    
+
 
     def put(self, url, **kwargs):
         return self.request("PUT", url, **kwargs)
-    
+
 
     def patch(self, url, **kwargs):
         return self.request("PATCH", url, **kwargs)

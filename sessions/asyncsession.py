@@ -1,35 +1,12 @@
-from os import (
-    getpid as _getpid,
-)
+from os import getpid as _getpid
+from asyncio import gather as _gather
+from orjson import dumps as _dumps
+from alive_progress import alive_bar as _alive_bar
+from aiohttp import ClientSession as _ClientSession
+from httpx import AsyncClient as _AsyncClient
 
-from asyncio import (
-    gather as _gather,
-)
-
-from orjson import (
-    dumps as _dumps,
-)
-
-from alive_progress import (
-    alive_bar as _alive_bar,
-)
-
-from aiohttp import (
-    ClientSession as _ClientSession,
-)
-
-from httpx import (
-    AsyncClient as _AsyncClient,
-    Headers
-)
-
-from .useragents import (
-    UserAgents as _UserAgents,
-)
-
-from .objects import (
-    AsyncResponse as _AsyncResponse,
-)
+from .useragents import UserAgents as _UserAgents
+from .objects import AsyncResponse as _AsyncResponse
 
 
 class AsyncSession(_ClientSession):

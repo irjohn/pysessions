@@ -1,10 +1,7 @@
-from random import (
-    Random as _Random,
-)
+from random import Random as _Random
 
-from .variables import(
-    USER_AGENTS as _USER_AGENTS,
-)
+from .variables import USER_AGENTS as _USER_AGENTS
+
 
 class UserAgents:
     RNG = _Random()

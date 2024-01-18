@@ -1,31 +1,19 @@
 import os as _os
-
-from signal import (
-    SIGKILL as _SIGKILL
-)
-from atexit import (
-    register as _register
-)
-
+from signal import SIGKILL as _SIGKILL
+from atexit import register as _register
+from time import sleep as _ssleep
 from psutil import (
     Process as _Process,
     process_iter as _process_iter,
 )
-
 from subprocess import (
     Popen as _Popen,
     DEVNULL as _DEVNULL
 )
-
-from time import (
-    sleep as _ssleep
-)
-
 from asyncio import (
     Semaphore,
     sleep as _asleep
 )
-
 from databases import (
     BaseAIORedis as _BaseAIORedis,
     BaseRedis as _BaseRedis,
@@ -33,11 +21,11 @@ from databases import (
 
 from .session import Session as _Session
 from .tor import TorSession as _TorSession
+from .objects import AsyncResponse as _AsyncResponse
 from .asyncsession import (
     AsyncSession as _AsyncSession,
     AsyncClient as _AsyncClient,
 )
-from .objects import AsyncResponse as _AsyncResponse
 
 
 _SOCKET_PATH = f"/tmp/ratelimit-{_os.getpid()}.sock"
