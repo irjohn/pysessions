@@ -13,6 +13,7 @@ setup(
         "alive_progress",
         "aiomisc",
         "retry",
+        "python-dotenv",
     ],
     extras_require={
         "all": ["redis[hiredis]", "psutil", "stem"],
