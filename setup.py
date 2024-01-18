@@ -13,6 +13,8 @@ setup(
         "alive_progress",
     ],
     extras_require={
-        "backend": ["redis[hiredis]", "psutil"]
+        "all": ["redis[hiredis]", "psutil", "stem"],
+        "backend": ["redis[hiredis]", "psutil"],
+        "tor": ["stem"],
     }
 )
