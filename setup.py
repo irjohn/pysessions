@@ -10,10 +10,9 @@ setup(
         "httpx[http2]",
         "aiohttp[speedups]",
         "stem",
-        "redis[hiredis]",
         "alive_progress",
     ],
     extras_require={
-
+        "backend": ["redis[hiredis]", "psutil"]
     }
 )
