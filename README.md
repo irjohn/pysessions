@@ -8,14 +8,14 @@ This repository contains a collection of HTTP session clients. It provides optio
 To install the sessions repository, clone the repository to your local machine:
 
 ```bash
-git clone https://github.com/yourusername/sessions.git
+git clone https://github.com/irjohn/pysessions.git
 ```
 
 Then, navigate into the cloned repository and install the necessary dependencies:
 
 ```bash
-cd sessions
-pip install -r requirements.txt
+cd pysessions
+pip install .
 ```
 
 ## Usage
