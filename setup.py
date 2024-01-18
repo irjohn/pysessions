@@ -11,6 +11,8 @@ setup(
         "aiohttp[speedups]",
         "stem",
         "alive_progress",
+        "aiomisc",
+        "retry",
     ],
     extras_require={
         "all": ["redis[hiredis]", "psutil", "stem"],

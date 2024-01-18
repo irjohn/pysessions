@@ -1,12 +1,10 @@
 import time
 from functools import wraps
-from random import SystemRandom
+from random import Random
 
-from sessions.variables import (
-    STATUS_CODES
-)
+from sessions.variables import STATUS_CODES
 
-RNG = SystemRandom()
+RNG = Random()
 STATUS_CODES = tuple(STATUS_CODES.keys())
 BASE_URL = "http://localhost:8080"
 
@@ -54,5 +52,3 @@ def STATUS_CODE_URLS(n_trials=1000):
 def IMAGE_URLS(n_trials=1000):
     image_types = ("jpeg", "png", "svg", "webp")
     return (f"{BASE_URL}/image/{image_type}" for image_type in RNG.choices(image_types, k=n_trials))
-
-
