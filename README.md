@@ -23,7 +23,7 @@ pip install -r requirements.txt
 Here's a basic example of how to use the sessions repository:
 
 ```python
-from sessions import SessionClient
+from sessions import Session
 
 # Create a new SessionClient
 client = SessionClient()
