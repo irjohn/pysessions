@@ -12,7 +12,7 @@ from sessions import Session, AsyncSession, CacheMixin, RatelimitMixin
 
 
 RNG = Random()
-URLS = Urls("http://httpbin")
+URLS = Urls("http://httpbin.org")
 
 sliding_window_target = lambda window, limit, n_tests: (window / limit) * n_tests
 fixed_window_target = lambda window, limit, n_tests: (n_tests / limit) * window
