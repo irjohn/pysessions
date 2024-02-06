@@ -94,6 +94,8 @@ class SessionMeta(type):
 
     def __new__(cls, name, bases, namespace):
         parents = {base.__name__: base for base in bases}
+        namespace["_run_callbacks"] = _run_callbacks
+        namespace["clear_cache"] = clear_cache
 
         if namespace.get("request") is None:
             session = None
@@ -111,8 +113,7 @@ class SessionMeta(type):
                     break
 
             if session is not None:
-                namespace["clear_cache"] = clear_cache
-                namespace["_run_callbacks"] = _run_callbacks
+
                 if hasattr(session, "request"):
                     namespace["request"] = cls.define_request(session, set(parents.keys()))
 
