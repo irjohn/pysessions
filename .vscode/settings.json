@@ -1,0 +1,4 @@
+{
+    "docwriter.style": "NumPy",
+    "python.analysis.typeCheckingMode": "off"
+}

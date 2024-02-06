@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pysessions"
+version = "0.1.2"
+requires-python = ">=3.10"
+dependencies = [
+    "orjson",
+    "requests",
+    "httpx[http2]>=0.14.0",
+    "aiohttp[speedups]>=3.9",
+    "alive_progress",
+    "python-dotenv",
+    "yarl",
+    "redislite",
+    "redis",
+]
+authors = [
+    { name = "John Gaddis", email = "normlman@live.com" },
+]
+description = "A wrapper around popular python HTTP client providing enhanced features such as ratelimiting, caching, multiple requests"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: Unix",
+]
+
+[project.optional-dependencies]
+all = ["redislite", "stem"]
+backend = ["redislite"]
+proxy = ["requests[socks]"]
+tor = ["stem"]
+
+[project.urls]
+Homepage = "https://github.com/irjohn/pysessions"

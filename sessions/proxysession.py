@@ -8,6 +8,7 @@ from pickle import (
 
 from dotenv import dotenv_values as _dotenv_values
 from requests import Session
+from requests.auth import HTTPProxyAuth
 from urllib.parse import (
     quote as _quote,
     unquote as _unquote,
@@ -36,13 +37,14 @@ except:
 
 class ProxySession(Session):
     def __init__(self, username="", password="", headers=None, random_user_agents=True, **kwargs):
-        super(ProxySession, self).__init__(**kwargs)
+        headers = headers if isinstance(headers, dict) else {}
+        super().__init__()
+        self._rng = _Random()
+        self._random_user_agents = random_user_agents
         env = _dotenv_values()
         self._username = _quote(_unquote(username)) or env.get("PROXY_USERNAME", env.get("NORDVPN_USERNAME", ""))
         self._password = _quote(_unquote(password)) or env.get("PROXY_PASSWORD", env.get("NORDVPN_PASSWORD", ""))
-        self._random_user_agents = random_user_agents
-        self._rng = _Random()
-        self.headers = headers or self.headers
+        self._auth = HTTPProxyAuth(self._username, self._password)
 
 
     @classmethod
@@ -58,7 +60,8 @@ class ProxySession(Session):
 
     @property
     def proxies(self):
-        url = f"{self._username}:{self._password}@{self._rng.choice(_PROXIES)}"
+        #url = f"{self._username}:{self._password}@{self._rng.choice(_PROXIES)}"
+        url = self._rng.choice(_PROXIES)
         return {
             "http": f"http://{url}:89",
             "https": f"https://{url}:89"
@@ -71,36 +74,41 @@ class ProxySession(Session):
 
 
     def request(self, method, url, headers=None, **kwargs):
+        proxies = self.proxies
+        print(proxies)
+        if self._random_user_agents:
+            headers = headers or {}
+            headers["User-Agent"] = _UserAgents.user_agent
         try:
-            headers = headers or _UserAgents.headers if self._random_user_agents else self.headers
-            return super(ProxySession, self).request(method, url, proxies=self.proxies, headers=headers, **kwargs)
-        except:
-            return self.request(method, url, **kwargs)
+            return super().request(method=method, url=url, proxies=proxies, headers=headers, auth=self._auth, **kwargs)
+        except Exception as e:
+            print(e)
+            return self.request(method=method, url=url, **kwargs)
 
 
     def get(self, url, **kwargs):
-        return self.request("GET", url, **kwargs)
+        return self.request(method="GET", url=url, **kwargs)
 
 
     def head(self, url, **kwargs):
-        return self.request("HEAD", url, **kwargs)
+        return self.request(method="HEAD", url=url, **kwargs)
 
 
     def options(self, url, **kwargs):
-        return self.request("OPTIONS", url, **kwargs)
+        return self.request(method="OPTIONS", url=url, **kwargs)
 
 
     def delete(self, url, **kwargs):
-        return self.request("DELETE", url, **kwargs)
+        return self.request(method="DELETE", url=url, **kwargs)
 
 
     def post(self, url, **kwargs):
-        return self.request("POST", url, **kwargs)
+        return self.request(method="POST", url=url, **kwargs)
 
 
     def put(self, url, **kwargs):
-        return self.request("PUT", url, **kwargs)
+        return self.request(method="PUT", url=url, **kwargs)
 
 
     def patch(self, url, **kwargs):
-        return self.request("PATCH", url, **kwargs)
+        return self.request(method="PATCH", url=url, **kwargs)

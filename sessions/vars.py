@@ -1,3 +1,4 @@
+
 IP_APIS = (
     "https://api.my-ip.io/ip",
     "https://api.ipify.org",
@@ -13,6 +14,7 @@ IP_APIS = (
     "https://myexternalip.com/raw",
     "https://ip8.com/ip",
 )
+
 
 USER_AGENTS = (
         # Desktop

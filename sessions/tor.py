@@ -16,7 +16,7 @@ if _has_stem:
     from requests import Session as _Session
 
     from .useragents import UserAgents as _UserAgents
-    from .variables import  IP_APIS as _IP_APIS
+    from .vars import  IP_APIS as _IP_APIS
 
 
     def _check_tor_service():
@@ -65,14 +65,16 @@ if _has_stem:
         """
 
         def __init__(self, tor_ports=(9000, 9001, 9002, 9003, 9004), tor_cport=9051,
-                    password=None, autochange_id=5, headers={}, **kwargs):
+                    password=None, autochange_id=5, headers=None, random_user_agents=True, **kwargs):
+            self.headers = headers if isinstance(headers, dict) else {}
+            self._random_user_agents = random_user_agents
             self._tor_ports = tor_ports
             self._tor_cport = tor_cport
             self._password = password
             self.autochange_id = autochange_id
             self.ports = _cycle(tor_ports)
-            super().__init__(**kwargs)
-            self.headers = headers
+            super().__init__()
+
             self._start_controller()
             _register(lambda: self._controller.close())
 
@@ -90,16 +92,6 @@ if _has_stem:
         @property
         def password(self):
             return self._password
-
-
-        @property
-        def headers(self):
-            return _UserAgents.headers | self._headers
-
-
-        @headers.setter
-        def headers(self, value):
-            self._headers = value
 
 
         def check_service(self):
@@ -152,9 +144,11 @@ if _has_stem:
                 "http": f"socks5h://localhost:{port}",
                 "https": f"socks5h://localhost:{port}",
             }
-
+            if self._random_user_agents:
+                headers = headers or {}
+                headers["User-Agent"] = _UserAgents.user_agent
             try:
-                resp = super().request(method, url, headers=headers or self.headers, proxies=proxy, **kwargs)
+                resp = super().request(method, url, headers=headers, proxies=proxy, **kwargs)
             except Exception as e:
                 print(e)
                 return self.request(method, url, proxy=proxy, **kwargs)
