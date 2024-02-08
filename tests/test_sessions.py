@@ -9,7 +9,7 @@ from sessions.config import SessionConfig as config
 from sessions.vars import AIOHTTP_DEFAULT_AGENT, HTTPX_DEFAULT_AGENT
 from sessions.useragents import useragent
 
-config.raise_errors = False
+config.raise_errors = True
 
 URLS = Urls("http://httpbin.org")
 

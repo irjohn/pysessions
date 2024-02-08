@@ -4,7 +4,6 @@ from sys import version_info as __version__
 from dataclasses import asdict
 from random import Random
 
-from rich import print
 from sessions.utils import Urls
 from sessions.config import SessionConfig as config
 from sessions.testing import run_sync_tests, cleanup_dbs
