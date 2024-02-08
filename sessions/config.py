@@ -35,7 +35,7 @@ class PackageConfig:
         print_callback_exceptions:  bool                    = True,
         print_callback_tracebacks:  bool                    = False,
         threaded_timeout:           int | float | None      = None,
-        renew_cache_on_get:         bool                    = True,
+        renew_cache_on_get:         bool                    = False,
     ):
         self.debug                                          = debug
         self.semaphore                                      = semaphore

@@ -6,8 +6,7 @@ from .pycache import InMemoryCache
 from .redis import RedisCache
 from .sqlite import SQLiteCache
 from ..utils import get_valid_kwargs
-from ..objects import Alias
-
+from ..enums import Alias
 
 def cache_factory(instance, backend="memory", *args, **kwargs):
     if backend in Alias.MEMORY.value:
@@ -22,7 +21,7 @@ def cache_factory(instance, backend="memory", *args, **kwargs):
     return self
 
 
-class CacheMixin():
+class CacheMixin:
     def __init__(
         self,
         backend: str                    = "memory",
@@ -44,3 +43,7 @@ class CacheMixin():
     @property
     def backend(self):
         return self._backend
+
+    @property
+    def cache_key(self):
+        return self.cache.options.key

@@ -1,19 +1,18 @@
-import time as _time
-from enum import Enum
+import time
 from pathlib import Path as _Path
-from datetime import timedelta as _timedelta
+from datetime import timedelta as timedelta
 from dataclasses import dataclass, field, make_dataclass, fields, MISSING
 from typing import Sequence, List
-from collections import defaultdict as _defaultdict
-from datetime import timedelta as _timedelta
+from collections import defaultdict
+from datetime import timedelta
 
-from orjson import loads as _jsonload
+from orjson import loads
 from yarl import URL
 from aiohttp.connector import Connection
 from http.cookies import SimpleCookie
 from multidict import CIMultiDictProxy, MultiDictProxy, CIMultiDict
-from requests import Response as _RequestsResponse
-from httpx import Response as _HttpxResponse
+from requests import Response as RequestsResponse
+from httpx import Response as HTTPXResponse
 from aiohttp import (
     RequestInfo,
     ClientResponse,
@@ -22,7 +21,7 @@ from aiohttp import (
 
 from .vars import STATUS_CODES
 from .utils import get_valid_kwargs
-
+from .config import SessionConfig as config
 
 @dataclass(slots=True, frozen=True, eq=False)
 class Request:
@@ -79,9 +78,9 @@ class Response:
         encoding (str | None): Encoding of the response.
         charset (str | None | None): Character set of the response.
         content_disposition (str | None): Content disposition of the response.
-        history (Sequence[ClientResponse|_RequestsResponse|_HttpxResponse] | None): History of the response.
+        history (Sequence[ClientResponse|RequestsResponse|HTTPXResponse] | None): History of the response.
         request (RequestInfo | None): Information about the request.
-        elapsed (_timedelta | None): Time elapsed for the request.
+        elapsed (timedelta | None): Time elapsed for the request.
         _json (dict | None): Parsed JSON content of the response.
         _text (str | None): Decoded text content of the response.
 
@@ -117,9 +116,10 @@ class Response:
     encoding: str | None                                                                     = None
     charset: str | None | None                                                               = None
     content_disposition: str | None                                                          = None
-    history: Sequence[ClientResponse|_RequestsResponse|_HttpxResponse] | None                = None
+    history: Sequence[ClientResponse|RequestsResponse|HTTPXResponse] | None                = None
     request: RequestInfo | None                                                              = None
-    elapsed: _timedelta | None                                                               = None
+    elapsed: timedelta | None                                                               = None
+    _is_cached: bool | None                                                                  = False
     _json: dict | None                                                                       = field(default=None, init=False)
     _text: str | None                                                                        = field(default=None, init=False)
 
@@ -172,7 +172,8 @@ class Response:
         data["headers"] = CIMultiDictProxy(CIMultiDict(headers))         if (headers := data.get("headers")) is not None else None
         data["raw_headers"] = tuple(raw_headers)                         if (raw_headers := data.get("raw_headers")) is not None else None
         data["request"] = Request(**request)                             if (request := data.get("request")) is not None else None
-        data["elapsed"] = _timedelta(seconds=data["elapsed"])
+        data["elapsed"] = timedelta(seconds=data["elapsed"])
+        data["_is_cached"] = True
         return cls(**data)
 
     @property
@@ -187,7 +188,7 @@ class Response:
         if self._json is not None:
             return self._json
         try:
-            object.__setattr__(self, "_json", _jsonload(self.content))
+            object.__setattr__(self, "_json", loads(self.content))
             return self._json
         except:
             return {}
@@ -208,11 +209,18 @@ class Response:
     def reason_phrase(self):
         return self.reason
 
+    @property
+    def is_cached(self):
+        return self._is_cached
+
     def __set(self, name, value):
         object.__setattr__(self, name, value)
 
     def set_callbacks(self, results: tuple):
         self.__set("callbacks", results)
+
+    def set_cache(self, value: bool):
+        self.__set("_is_cached", value)
 
 
 def _validate_port(port):
@@ -231,7 +239,7 @@ class CacheData:
     Represents cached data with response and last update timestamp.
     """
     response: object
-    last_update: float | int
+    expiration: float | int
 
 
 @dataclass(frozen=True, eq=False)
@@ -363,10 +371,10 @@ class MemoryOptions:
             If an integer or float is provided, it will be used directly as the check frequency.
             Default value is 15.
     """
-    check_frequency: float | int | _timedelta               = 15
+    check_frequency: float | int | timedelta               = 15
 
     def __post_init__(self):
-        if isinstance(self.check_frequency, _timedelta):
+        if isinstance(self.check_frequency, timedelta):
             self.override("check_frequency", self.check_frequency.total_seconds())
         elif isinstance(self.check_frequency, (int, float)):
             if self.check_frequency < 0:
@@ -379,7 +387,7 @@ class MixinOptions:
     MixinOptions class represents options for a mixin.
     """
 
-    cache_timeout: float | int | _timedelta                 = 3600
+    cache_timeout: float | int | timedelta                 = 3600
 
     def __post_init__(self):
         """
@@ -387,7 +395,7 @@ class MixinOptions:
         If cache_timeout is a timedelta object, it is converted to seconds.
         If cache_timeout is a negative number, it is overridden to 0.
         """
-        if isinstance(self.cache_timeout, _timedelta):
+        if isinstance(self.cache_timeout, timedelta):
             self.override("cache_timeout", self.cache_timeout.total_seconds())
         elif isinstance(self.cache_timeout, (int, float)):
             if self.cache_timeout < 0:
@@ -405,7 +413,8 @@ class MixinOptions:
         """
         object.__delattr__(self, key)
 
-@dataclass(frozen=True, eq=False)
+
+@dataclass(frozen=True, kw_only=True, eq=False)
 class RatelimitOptions(MixinOptions):
     """
     Represents the options for rate limiting.
@@ -417,6 +426,8 @@ class RatelimitOptions(MixinOptions):
         raise_errors (bool): Whether to raise errors when rate limiting is triggered. Defaults to False.
     """
 
+    backend: str                                          = "memory"
+    key: str                                              = "Session"
     per_host: bool                                        = False
     per_endpoint: bool                                    = True
     sleep_duration: float | int                           = 0.25
@@ -426,7 +437,11 @@ class RatelimitOptions(MixinOptions):
         super().__post_init__()
 
     @classmethod
-    def from_backend(cls, backend: str | None, **kwargs):
+    def from_backend(
+        cls,
+        backend: str,
+        **kwargs
+    ):
         """
         Creates a RatelimitOptions instance based on the specified backend.
 
@@ -437,6 +452,8 @@ class RatelimitOptions(MixinOptions):
         Returns:
             RatelimitOptions: The created RatelimitOptions instance.
         """
+
+        kwargs["backend"] = backend
 
         if backend == "memory":
             fields_ = (
@@ -449,7 +466,8 @@ class RatelimitOptions(MixinOptions):
                 fields=fields_,
                 bases=(RatelimitOptions, MemoryOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
 
         elif backend == "sqlite":
@@ -463,7 +481,8 @@ class RatelimitOptions(MixinOptions):
                 fields=fields_,
                 bases=(RatelimitOptions, SQLiteOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
 
         elif backend == "redis":
@@ -477,14 +496,15 @@ class RatelimitOptions(MixinOptions):
                 fields=fields_,
                 bases=(RatelimitOptions, RedisServerOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
 
         kwargs = get_valid_kwargs(dc.__init__, kwargs)
         return dc(**kwargs)
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, kw_only=True, eq=False)
 class CacheOptions(MixinOptions):
     """
     Represents options for caching.
@@ -493,13 +513,19 @@ class CacheOptions(MixinOptions):
         compression (bool): Flag indicating whether compression is enabled.
     """
 
+    backend: str                                        = "memory"
+    key: str                                            = "Session"
     compression: bool                                   = True
 
     def __post_init__(self):
         super().__post_init__()
 
     @classmethod
-    def from_backend(cls, backend: str | None, **kwargs):
+    def from_backend(
+        cls,
+        backend: str,
+        **kwargs
+    ):
         """
         Creates a CacheOptions instance based on the specified backend.
 
@@ -510,6 +536,9 @@ class CacheOptions(MixinOptions):
         Returns:
             CacheOptions: The created CacheOptions instance.
         """
+
+        kwargs["backend"] = backend
+
         if backend == "memory":
             fields_ = (
                 *((field_.name, field_.type, field_) for field_ in fields(CacheOptions)),
@@ -521,7 +550,8 @@ class CacheOptions(MixinOptions):
                 fields=fields_,
                 bases=(CacheOptions, MemoryOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
 
         elif backend == "sqlite":
@@ -535,7 +565,8 @@ class CacheOptions(MixinOptions):
                 fields=fields_,
                 bases=(CacheOptions, SQLiteOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
         elif backend == "redis":
             fields_ = (
@@ -548,7 +579,8 @@ class CacheOptions(MixinOptions):
                 fields=fields_,
                 bases=(CacheOptions, RedisServerOptions),
                 frozen=True,
-                eq=False
+                eq=False,
+                kw_only=True,
             )
 
         kwargs = get_valid_kwargs(dc.__init__, kwargs)
@@ -625,6 +657,7 @@ class InMemoryCacheMixin:
         """Returns a string representation of the cache."""
         return repr(dict(self._cache))
 
+
 class CacheInMemoryCache(InMemoryCacheMixin):
     def __init__(
         self,
@@ -637,11 +670,12 @@ class CacheInMemoryCache(InMemoryCacheMixin):
             options (CacheOptions): The cache options.
 
         """
+        self._default = lambda: CacheData(None, time.time())
         self._cache_timeout = options.cache_timeout
-        self._cache = _defaultdict(lambda: CacheData(None, _time.time()))
         self._check_frequency = options.check_frequency
-        self._last_check = _time.time()
 
+        self._cache = defaultdict(self._default)
+        self._time_to_check = time.time()
 
     def __getitem__(self, key):
         """
@@ -654,15 +688,15 @@ class CacheInMemoryCache(InMemoryCacheMixin):
             The value associated with the key.
 
         """
-        now = _time.time()
-        self._cache[key].last_update = now
+        now = time.time()
+        if config.renew_cache_on_get:
+            self._cache[key].expiration = now + self._cache_timeout
 
-        if self._cache_timeout > 0 and now - self._last_check > self._check_frequency:
-            self._cache = {key: data for key, data in self._cache.items() if now - data.last_update <= self._cache_timeout}
-            self._last_check = now
+        if self._cache_timeout > 0 and now >= self._time_to_check:
+            self._cache = defaultdict(self._default, {key: data for key, data in self._cache.items() if now >= data.expiration})
+            self._time_to_check = now + self._check_frequency
 
         return self._cache[key].response
-
 
     def __setitem__(self, key, value):
         """
@@ -673,9 +707,8 @@ class CacheInMemoryCache(InMemoryCacheMixin):
             value: The value to be set.
 
         """
-        self._cache[key].last_update = _time.time()
+        self._cache[key].expiration = time.time() + self._cache_timeout
         self._cache[key].response = value
-
 
 
 class RatelimitInMemoryCache(InMemoryCacheMixin):
@@ -690,62 +723,23 @@ class RatelimitInMemoryCache(InMemoryCacheMixin):
     def __init__(
         self,
         options: RatelimitOptions,
-        default=None,
+        default=lambda: None,
     ):
-        self._cache = _defaultdict(default)
+        self._default = default
         self._cache_timeout = options.cache_timeout
         self._check_frequency = options.check_frequency
-        self._last_check = _time.time()
 
+        self._cache = defaultdict(self._default)
+        self._last_check = time.time()
 
     def __getitem__(self, key):
-        now = _time.time()
+        now = time.time()
 
         if self._cache_timeout > 0 and now - self._last_check > self._check_frequency:
-            self._cache = {key: data for key, data in self._cache.items() if now - data.last_update <= self._cache_timeout}
+            self._cache = defaultdict(self._default, {key: data for key, data in self._cache.items() if now - data.last_update <= self._cache_timeout})
             self._last_check = now
 
         return self._cache[key]
 
     def __setitem__(self, key, value):
         self._cache[key] = value
-
-class Timeouts(Enum):
-    HTTPX = {"timeout", "read_timeout", "write_timeout", "connect_timeout", "pool_timeout"}
-    AIOHTTP = {"timeout", "read_timeout", "write_timeout", "connect_timeout", "pool_timeout", "sock_connect", "sock_read"}
-
-
-class Alias(Enum):
-    SLIDINGWINDOW = {"slidingwindow", "SlidingWindow", "sliding_window", "sliding-window", "slidingwindowratelimit", "sliding-windowratelimit", "sliding_windowratelimit", "slidingwindowratelimiter", "sliding-windowratelimiter", "sliding_windowratelimiter", "slidingwindowratelimiting", "sliding-windowratelimiting", "sliding_windowratelimiting", "slidingwindowratelimitter", "sliding-windowratelimitter", "sliding_windowratelimitter", "slidingwindowratelimiters", "sliding-windowratelimiters", "sliding_windowratelimiters", "slidingwindowratelimitting", "sliding-windowratelimitting", "sliding_windowratelimitting"}
-
-    FIXEDWINDOW = {"fixedwindow", "FixedWindow", "fixed_window", "fixed-window", "fixedwindowratelimit", "fixed-windowratelimit", "fixed_windowratelimit", "fixedwindowratelimiter", "fixed-windowratelimiter", "fixed_windowratelimiter", "fixedwindowratelimiting", "fixed-windowratelimiting", "fixed_windowratelimiting", "fixedwindowratelimitter", "fixed-windowratelimitter", "fixed_windowratelimitter", "fixedwindowratelimiters", "fixed-windowratelimiters", "fixed_windowratelimiters", "fixedwindowratelimitting", "fixed-windowratelimitting", "fixed_windowratelimitting"}
-
-    TOKENBUCKET = {"tokenbucket", "TokenBucket", "token_bucket", "token-bucket", "tokenbucketratelimit", "token-bucketratelimit", "token_bucketratelimit", "tokenbucketratelimiter", "token-bucketratelimiter", "token_bucketratelimiter", "tokenbucketratelimiting", "token-bucketratelimiting", "token_bucketratelimiting", "tokenbucketratelimitter", "token-bucketratelimitter", "token_bucketratelimitter", "tokenbucketratelimiters", "token-bucketratelimiters", "token_bucketratelimiters", "tokenbucketratelimitting", "token-bucketratelimitting", "token_bucketratelimitting"}
-
-    LEAKYBUCKET = {"leakybucket", "LeakyBucket", "leaky_bucket", "leaky-bucket", "leakybucketratelimit", "leaky-bucketratelimit", "leaky_bucketratelimit", "leakybucketratelimiter", "leaky-bucketratelimiter", "leaky_bucketratelimiter", "leakybucketratelimiting", "leaky-bucketratelimiting", "leaky_bucketratelimiting", "leakybucketratelimitter", "leaky-bucketratelimitter", "leaky_bucketratelimitter", "leakybucketratelimiters", "leaky-bucketratelimiters", "leaky_bucketratelimiters", "leakybucketratelimitting", "leaky-bucketratelimitting", "leaky_bucketratelimitting"}
-
-    GCRA = {"gcra", "GCRA", "gcra", "Gcra", "gcraratelimit", "gcra-ratelimit", "gcra_ratelimit", "gcraratelimiter", "gcra-ratelimiter", "gcra_ratelimiter", "gcraratelimiting", "gcra-ratelimiting", "gcra_ratelimiting", "gcraratelimitter", "gcra-ratelimitter", "gcra_ratelimitter", "gcraratelimiters", "gcra-ratelimiters", "gcra_ratelimiters", "gcraratelimitting", "gcra-ratelimitting", "gcra_ratelimitting"}
-
-    RATELIMIT_TYPE = {"type", "ratelimit", "ratelimiter", "ratelimit_type", "limiter", "limitertype", "limiter_type", "ratelimiter_type", "rate_limit", "rate-limit", "rate_limiter", "rate-limiter", "ratelimiting", "rate_limiting", "rate-limiting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting"}
-
-    MEMORY = {"memory", "mem", "py", "python", "pure", "inmemory", "in-memory", "in_memory", ":memory:", "inmemorycache", "in-memorycache", "in_memorycache", "inmemory_cache", "in-memory_cache", "in_memory_cache", "inmemorycacheobject", "in-memorycacheobject", "in_memorycacheobject", "inmemory_cacheobject", "in-memory_cacheobject", "in_memory_cacheobject"}
-
-    REDIS = {"redis", "redis", "red", "redis_cache", "redis-cache", "rediscache", "redis_cacheobject", "redis-cacheobject", "rediscacheobject", "redis_cache_object", "redis-cache_object", "rediscache_object"}
-
-    SQLITE = {"sqlite", "sqlite3", "sql", "sql3", "sqlite_cache", "sqlite-cache", "sqlitecache", "sqlite_cacheobject", "sqlite-cacheobject", "sqlitecacheobject", "sqlite_cache_object", "sqlite-cache_object", "sqlitecache_object"}
-
-
-    @classmethod
-    def validate_ratelimit_type(cls, value):
-        if value in cls.SLIDINGWINDOW.value:
-            return "slidingwindow"
-        elif value in cls.FIXEDWINDOW.value:
-            return "fixedwindow"
-        elif value in cls.TOKENBUCKET.value:
-            return "tokenbucket"
-        elif value in cls.LEAKYBUCKET.value:
-            return "leakybucket"
-        elif value in cls.GCRA.value:
-            return "gcra"
-        else:
-            raise ValueError(f"Ratelimit type {value} is not implemented.")

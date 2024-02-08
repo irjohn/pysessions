@@ -18,7 +18,7 @@ class TokenBucket(Ratelimit):
         _fill_rate (float | int): The rate at which tokens are added to the bucket per second.
     """
 
-    __slots__ = ("_capacity", "_fill_rate")
+    __slots__ = ("_ratelimit_conn", "_capacity", "_fill_rate")
     __dc__ = make_dataclass("TokenBucketCache", (("tokens", float), ("last_check", float), ("last_update", float)), slots=True, eq=False)
 
     def __init__(
@@ -55,7 +55,7 @@ class TokenBucket(Ratelimit):
             TokenBucketCache: The updated token bucket cache.
         """
         # Retrieve data
-        data = self._instance._ratelimit_memory_conn[key]
+        data = self._ratelimit_conn[key]
 
         # Calculate the time elapsed since the last fill
         current = time()
@@ -105,7 +105,7 @@ class LeakyBucket(Ratelimit):
         _leak_rate (float | int): The rate at which the bucket leaks requests per second.
     """
 
-    __slots__ = ("_capacity", "_leak_rate")
+    __slots__ = ("_ratelimit_conn", "_capacity", "_leak_rate")
     __dc__ = make_dataclass("LeakyBucketCache", (("content", float), ("last_checked", float), ("last_update", float)), slots=True, eq=False)
 
     def __init__(
@@ -141,7 +141,7 @@ class LeakyBucket(Ratelimit):
         Returns:
             LeakyBucketCache: The updated cache data after leaking requests.
         """
-        data = self._instance._ratelimit_memory_conn[key]
+        data = self._ratelimit_conn[key]
         content = data.content # type: ignore
 
         # Calculate the amount of time that has passed
@@ -175,7 +175,7 @@ class LeakyBucket(Ratelimit):
 
 
 class SlidingWindow(Ratelimit):
-    __slots__ = ("_limit", "_window")
+    __slots__ = ("_ratelimit_conn", "_limit", "_window")
     __dc__ = make_dataclass("SlidingWindowCache", (("pre_count", float), ("cur_count", float), ("cur_time", float), ("last_update", float)), slots=True, eq=False)
 
     def __init__(
@@ -196,7 +196,7 @@ class SlidingWindow(Ratelimit):
 
 
     def ok(self, key):
-        data = self._instance._ratelimit_memory_conn[key]
+        data = self._ratelimit_conn[key]
         if ((time_ := time()) - data.cur_time) > self._window: # type: ignore
             data.cur_time = time_ # type: ignore
             data.pre_count = data.cur_count # type: ignore
@@ -212,7 +212,7 @@ class SlidingWindow(Ratelimit):
 
 
 class FixedWindow(Ratelimit):
-    __slots__ = ("_limit", "_window")
+    __slots__ = ("_ratelimit_conn", "_limit", "_window")
     __dc__ = make_dataclass("FixedWindowCache", (("window_start", float), ("requests", float), ("last_update", float)), slots=True, eq=False)
 
     def __init__(
@@ -233,7 +233,7 @@ class FixedWindow(Ratelimit):
 
 
     def ok(self, key):
-        data = self._instance._ratelimit_memory_conn[key]
+        data = self._ratelimit_conn[key]
         window_start = data.window_start # type: ignore
         current_time = time()
         if current_time - window_start > self._window:
@@ -265,8 +265,9 @@ class GCRA(Ratelimit):
         _limit (int): Limit on the burst size (in seconds).
     """
 
-    __slots__ = ("_period", "_limit")
+    __slots__ = ("_ratelimit_conn", "_period", "_limit")
     __dc__ = make_dataclass("GCRACache", (("last_time", float), ("last_update", float)), slots=True, eq=False)
+    #__dc__ = make_dataclass("GCRACache", (("tat", float), ("last_update", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -289,6 +290,7 @@ class GCRA(Ratelimit):
         """
         now = self.now
         return self.__dc__(last_time=now, last_update=now)
+        #return self.__dc__(tat=0, last_update=now)
 
 
     def ok(self, key):
@@ -301,7 +303,7 @@ class GCRA(Ratelimit):
         Returns:
             bool: True if the request is allowed, False otherwise.
         """
-        data = self._instance._ratelimit_memory_conn[key]
+        data = self._ratelimit_conn[key]
         current_time = time()
         expected_time = data.last_time + self._period
 

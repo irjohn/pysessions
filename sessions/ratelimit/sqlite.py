@@ -1,4 +1,5 @@
 import sqlite3
+from functools import wraps
 from time import time
 from dataclasses import make_dataclass, field, astuple
 from functools import partial
@@ -20,7 +21,7 @@ class TokenBucket(Ratelimit):
         _fill_rate (float | int): The rate at which tokens are added to the bucket per second.
     """
 
-    __slots__ = ("_capacity", "_fill_rate")
+    __slots__ = ("_ratelimit_conn", "_capacity", "_fill_rate")
     __attrs__ = ("key", "tokens", "last_check", "expiration")
     __dc__ = make_dataclass("TokenBucketCache", fields=(("key", str), ("tokens", float), ("last_check", float), ("expiration", float)), slots=True, eq=False)
 
@@ -115,7 +116,7 @@ class LeakyBucket(Ratelimit):
         _leak_rate (float | int): The rate at which the bucket leaks requests.
     """
 
-    __slots__ = ("_capacity", "_leak_rate")
+    __slots__ = ("_ratelimit_conn", "_capacity", "_leak_rate")
     __attrs__ = ("key", "content", "last_check", "expiration")
     __dc__ = make_dataclass("LeakyBucketCache", fields=(("key", str), ("content", float), ("last_check", float), ("expiration", float, field(default=0.0))), slots=True, eq=False)
 
@@ -206,7 +207,7 @@ class SlidingWindow(Ratelimit):
             # Rate limit exceeded, reject the request
     """
 
-    __slots__ = ("_limit", "_window")
+    __slots__ = ("_ratelimit_conn", "_limit", "_window")
     __attrs__ = ("key", "cur_time", "cur_count", "pre_count", "expiration")
     __dc__ = make_dataclass("SlidingWindowCache", fields=(("key", str), ("cur_time", float), ("cur_count", int), ("pre_count", int), ("expiration", float, field(default=0.0))), slots=True, eq=False)
 
@@ -267,7 +268,7 @@ class FixedWindow(Ratelimit):
         _window (float | int): The duration of the window in seconds.
     """
 
-    __slots__ = ("_limit", "_window")
+    __slots__ = ("_ratelimit_conn", "_limit", "_window")
     __attrs__ = ("key", "window_start", "requests", "expiration")
     __dc__ = make_dataclass("FixedWindowCache", fields=(("key", str), ("window_start", float), ("requests", int), ("expiration", float, field(default=0.0))), slots=True, eq=False)
 
@@ -339,7 +340,7 @@ class GCRA(Ratelimit):
 
     """
 
-    __slots__ = ("_period", "_limit")
+    __slots__ = ("_ratelimit_conn", "_period", "_limit")
     __attrs__ = ("key", "last_check", "expiration")
     __dc__ = make_dataclass("GCRACache", fields=(("key", str), ("last_check", float), ("expiration", float, field(default=0.0))), slots=True, eq=False)
 
@@ -399,7 +400,13 @@ _CLASS_TYPES = {
     "gcra": GCRA,
 }
 
-
+def commit(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        result = func(self, *args, **kwargs)
+        self._ratelimit_conn.commit()
+        return result
+    return wrapper
 
 class SQLiteRatelimitFactory:
     """
@@ -413,7 +420,7 @@ class SQLiteRatelimitFactory:
         type_name = type
         type = _CLASS_TYPES[type_name]
         type = cls._type(type.__name__, (type, ), {
-            "__slots__": ("_cursor", "_getstatement", "_setstatement", "_create_tables", "__contains__", "__getitem__", "__setitem__", "__delitem__", "clear", "keys", "values", "items", "_cleanup"),
+            "__slots__": ("_ratelimit_conn", "_cursor", "_getstatement", "_setstatement", "_create_tables", "__contains__", "__getitem__", "__setitem__", "__delitem__", "newconn", "clear", "keys", "values", "items", "_cleanup"),
         })
 
         self = type.__new__(type)
@@ -431,13 +438,16 @@ class SQLiteRatelimitFactory:
         self.values = partial(SQLiteRatelimitFactory.values, self)
         self.items = partial(SQLiteRatelimitFactory.items, self)
         self._cleanup = partial(SQLiteRatelimitFactory._cleanup, self)
+        self.newconn = partial(SQLiteRatelimitFactory.newconn, self)
         self.__init__(*args, key=key, **kwargs)
         return self
 
+    def newconn(self):
+        return sqlite3.connect(self.options.db)
 
+    @commit
     def _create_tables(self):
-        with self._instance._sqlite_conn:
-            self._instance._sqlite_conn.execute("""
+        self._cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ratelimit (
                 key TEXT PRIMARY KEY,
                 requests INT,
@@ -452,11 +462,13 @@ class SQLiteRatelimitFactory:
                 )
             """)
 
+    @commit
     def __contains__(self, url):
         key = self._parse_key(url)
         self._cursor.execute("SELECT key FROM ratelimit WHERE key = ?", (key,))
         return bool(self._cursor.fetchone())
 
+    @commit
     def __getitem__(self, key):
         self._cursor.execute(self._getstatement, (key,))
         data = self._cursor.fetchone()
@@ -467,28 +479,30 @@ class SQLiteRatelimitFactory:
             return self.__dc__(*data)
         return self.__dc__(key=key, **self.default())
 
-
+    @commit
     def __setitem__(self, key, value):
         value.expiration = time() + self.options.cache_timeout if self.options.cache_timeout else 0
-        with self._instance._sqlite_conn:
-            self._instance._sqlite_conn.execute(self._setstatement, astuple(value))
+        self._cursor.execute(self._setstatement, astuple(value))
 
+    @commit
     def __delitem__(self, key):
-        with self._instance._sqlite_conn:
-            self._instance._sqlite_conn.execute("DELETE FROM ratelimit WHERE key = ?", (key,))
+        self._cursor.execute("DELETE FROM ratelimit WHERE key = ?", (key,))
 
+    @commit
     def clear(self):
-        with self._instance._sqlite_conn:
-            self._instance._sqlite_conn.execute("DELETE FROM ratelimit")
+        self._cursor.execute("DELETE FROM ratelimit")
 
+    @commit
     def keys(self):
         self._cursor.execute("SELECT key FROM ratelimit")
         return tuple(key[0] for key in self._cursor.fetchall())
 
+    @commit
     def values(self):
         self._cursor.execute("SELECT value FROM ratelimit")
         return tuple(value[0] for value in self._cursor.fetchall())
 
+    @commit
     def items(self):
         self._cursor.execute("SELECT key, value FROM ratelimit")
         return tuple((key, value) for key, value in self._cursor.fetchall())

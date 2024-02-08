@@ -9,22 +9,26 @@ from .vars import STATUS_CODES
 
 
 _slidingwindow_target = lambda window, limit, n_tests, **kwargs: ((window / limit) * n_tests, window)
-_tokenbucket_target = lambda capacity, fill_rate, n_tests, **kwargs: ((capacity / fill_rate * (n_tests - capacity)), capacity / fill_rate)
-_leakybucket_target = lambda capacity, leak_rate, n_tests, **kwargs: ((n_tests - capacity) / leak_rate, leak_rate / capacity)
-_fixedwindow_target = lambda window, limit, n_tests, **kwargs: ((n_tests / limit) * window, window)
-_gcra_target = lambda period, limit, n_tests, **kwargs: ((n_tests - (capacity := _floor(limit / period))) * period + (limit if n_tests <= capacity else 0), period)
-_target = lambda type, **kwargs: globals()[f"_{type}_target"](**kwargs)
+_tokenbucket_target =   lambda capacity, fill_rate, n_tests, **kwargs: ((capacity / fill_rate * (n_tests - capacity)), capacity / fill_rate)
+_leakybucket_target =   lambda capacity, leak_rate, n_tests, **kwargs: ((n_tests - capacity) / leak_rate, leak_rate / capacity)
+_fixedwindow_target =   lambda window, limit, n_tests, **kwargs: ((n_tests / limit) * window, window)
+_gcra_target =          lambda period, limit, n_tests, **kwargs: ((n_tests - (capacity := _floor(limit / period))) * period + (limit if n_tests <= capacity else 0), period)
+_target =               lambda type, **kwargs: globals()[f"_{type}_target"](**kwargs)
 
+def get_target_time(type, **kwargs):
+    """
+    Returns the target time and delta for the given type.
 
-@dataclass(slots=True, frozen=True)
-class RatelimitResult:
-    name: str
-    execution_time: float
-    target_time: float
-    delta: float
-    observed_delta: float
-    passed: bool
-    args: dict
+    Args:
+        type (str): The type of the session algorithm.
+        kwargs (dict): The keyword arguments.
+
+    Returns:
+        tuple: The target time and delta for the given type.
+
+    """
+    return _target(type, **kwargs)
+
 
 
 def take(predicate, iterable):
@@ -47,7 +51,7 @@ def take(predicate, iterable):
 
 def timer(func):
     """
-    Decorator that measures the execution time of a function and compares it to a target time with a given delta.
+    Decorator that measures the execution time of a function.
 
     Args:
         func: The function to be timed.
@@ -58,104 +62,21 @@ def timer(func):
     """
     if inspect.iscoroutinefunction(func):
         @wraps(func)
-        async def wrapper(n_tests, urls=None, min=0, max=5, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs): # type: ignore
+        async def wrapper(*args, **kwargs):
             start = perf_counter()
-            args = await func(n_tests, urls=urls, min=min, max=max, type=type, backend=backend, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, **kwargs)
+            result = await func(*args, **kwargs)
             end = perf_counter()
-
-            target_time, delta = _target(type, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, n_tests=n_tests)
-            execution_time = end - start
-            observed_delta = execution_time - target_time
-            test_passed = abs(observed_delta) <= delta
-            print(f"{func.__name__} took {execution_time:.2f}s, Expected {target_time:.2f}s within {delta:.2f}s delta for {type}. Observed Delta ({observed_delta:.2f}s) {'Passed' if test_passed else 'Failed'}")
-            return RatelimitResult(func.__name__, execution_time, target_time, delta, observed_delta, test_passed, args)
+            print(f"{func.__name__} took {end-start:.2f}s")
+            return result
     else:
         @wraps(func)
-        def wrapper(n_tests, urls=None, min=0, max=5, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs):
+        def wrapper(*args, **kwargs):
             start = perf_counter()
-            args = func(n_tests, urls=urls, min=min, max=max, type=type, backend=backend, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, **kwargs)
+            result = func(*args, **kwargs)
             end = perf_counter()
-
-            target_time, delta = _target(type, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, n_tests=n_tests)
-            execution_time = end - start
-            observed_delta = execution_time - target_time
-            test_passed = abs(observed_delta) <= delta
-            print(f"{func.__name__} took {execution_time:.2f}s, Expected {target_time:.2f}s within {delta:.2f}s delta for {type}. Observed Delta ({observed_delta:.2f}s) {'Passed' if test_passed else 'Failed'}")
-            return RatelimitResult(func.__name__, execution_time, target_time, delta, observed_delta, test_passed, args)
+            print(f"{func.__name__} took {end-start:.2f}s")
+            return result
     return wrapper
-
-
-def extract_args(type, kwargs):
-    """
-    Extracts and returns the arguments based on the given type.
-
-    Args:
-        type (str): The type of the session algorithm.
-        kwargs (dict): The keyword arguments.
-
-    Returns:
-        dict: The extracted arguments based on the type.
-    """
-    if type == "slidingwindow":
-        return {"window": kwargs.get("window"), "limit": kwargs.get("limit"), "n_tests": kwargs.get("n_tests")}
-    elif type == "fixedwindow":
-        return {"window": kwargs.get("window"), "limit": kwargs.get("limit"), "n_tests": kwargs.get("n_tests")}
-    elif type == "tokenbucket":
-        return {"capacity": kwargs.get("capacity"), "fill_rate": kwargs.get("fill_rate"), "n_tests": kwargs.get("n_tests")}
-    elif type == "leakybucket":
-        return {"capacity": kwargs.get("capacity"), "fill_rate": kwargs.get("leak_rate"), "n_tests": kwargs.get("n_tests")}
-    elif type == "gcra":
-        return {"period": kwargs.get("period"), "limit": kwargs.get("limit"), "n_tests": kwargs.get("n_tests")}
-    return {}
-
-
-def make_test(typename, dct=False):
-    """
-    Generate test parameters based on the given typename.
-
-    Parameters:
-        typename (str): The type of test to generate parameters for.
-        dct (bool, optional): If True, return the parameters as a dictionary.
-                              If False (default), return the parameters as individual values.
-
-    Returns:
-        tuple or dict: The generated test parameters. If dct is True, returns a dictionary,
-                       otherwise returns a tuple.
-
-    Raises:
-        None
-
-    """
-    RNG = Random()
-    if typename == "slidingwindow":
-        window = round(RNG.uniform(1, 5), 1)
-        limit = RNG.randint(int(window), int(window*3))
-        n_tests = max(15, RNG.randint(int(limit*3), int(limit*5)))
-        return (window, limit, n_tests) if not dct else dict(window=window, limit=limit, n_tests=n_tests)
-
-    elif typename == "fixedwindow":
-        window = round(RNG.uniform(1, 5), 1)
-        limit = RNG.randint(int(window), int(window*3))
-        n_tests = max(15, RNG.randint(int(limit*3), int(limit*5)))
-        return (window, limit, n_tests) if not dct else dict(window=window, limit=limit, n_tests=n_tests)
-
-    elif typename == "tokenbucket":
-        capacity = RNG.randint(1, 6)
-        fill_rate = RNG.randint(int(capacity*1.5), int(capacity*3))
-        n_tests = max(15, RNG.randint(int(fill_rate*3), int(fill_rate*5)))
-        return (capacity, fill_rate, n_tests) if not dct else dict(capacity=capacity, fill_rate=fill_rate, n_tests=n_tests)
-
-    elif typename == "leakybucket":
-        capacity = RNG.randint(1, 6)
-        leak_rate = RNG.randint(int(capacity*1.5), int(capacity*3))
-        n_tests = max(15, RNG.randint(int(leak_rate*3), int(leak_rate*5)))
-        return (capacity, leak_rate, n_tests) if not dct else dict(capacity=capacity, leak_rate=leak_rate, n_tests=n_tests)
-
-    elif typename == "gcra":
-        period = round(RNG.uniform(0.001, 2), 1)
-        limit = RNG.randint(1, 10)
-        n_tests = max(15, RNG.randint(int(limit*1.5), int(limit*5)))
-        return (period, limit, n_tests) if not dct else dict(period=period, limit=limit, n_tests=n_tests)
 
 
 IMAGE_TYPES = ("jpeg", "png", "svg", "webp")

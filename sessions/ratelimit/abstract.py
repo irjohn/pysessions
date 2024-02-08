@@ -32,7 +32,7 @@ class Ratelimit(ABC):
         options (RatelimitOptions): The rate limit options object.
     """
 
-    __slots__ = ("options", "_instance", "_ratelimit_type", "_backend", "_cache", "_key", "_threadpool")
+    __slots__ = ("_count", "_start_time", "options", "_instance", "_ratelimit_type", "_backend", "_cache", "_threadpool")
 
     def __init__(
         self,
@@ -47,10 +47,8 @@ class Ratelimit(ABC):
         raise_errors:    bool              = False,
         **kwargs,
     ):
-        self._backend = backend
-        self._key = key if isinstance(key, str) else "Session"
-
         kwargs = {
+            "key":               key,
             "per_host":         per_host,
             "per_endpoint":     per_endpoint,
             "cache_timeout":    cache_timeout,
@@ -61,40 +59,48 @@ class Ratelimit(ABC):
         }
         if kwargs.get("ratelimit_options") is not None:
             kwargs = {**kwargs, **kwargs["ratelimit_options"]}
-        elif kwargs.get("ratelimit") is not None:
-            kwargs = {**kwargs, **kwargs["ratelimit"]}
+
+        self._count = 0
+        self._start_time = time.time()
 
         self.options = RatelimitOptions.from_backend(backend, **kwargs)
 
-        if self._backend == "memory":
-            self._instance.__class__._ratelimit_memory_conn = RatelimitInMemoryCache(options=self.options, default=self.default) # type: ignore
-
-        elif self._backend == "redis":
-            if not hasattr(self._instance, "_redis_conn") or not isinstance(self._instance._redis_conn, Redis):
-                self._instance.__class__._redis_conn = conn or Redis(**self.options.redis_server_config())
-
-        elif self._backend == "sqlite":
-            assert self.options.db is not None, "Database file must be provided for SQLite cache."
-            if not hasattr(self._instance, "_sqlite_conn") or not isinstance(self._instance._sqlite_conn, sqlite3.Connection):
-                self._instance.__class__._sqlite_conn = conn or sqlite3.connect(self.options.db)
-            if not hasattr(self, "_cursor"):
-                self._cursor = self._instance._sqlite_conn.cursor()
-            self._instance._sqlite_conn.row_factory = sqlite3.Row
-            self._create_tables()
-
+        self.connect()
         _register(self._cleanup)
 
     def __repr__(self) -> str:
         keys = ", ".join(f"{key.lstrip('_')}={getattr(self, key)}" for key in self.__slots__)
-        return f"<{self._backend.title()}{self.__class__.__name__} {keys}>"
+        return f"<{self.options.backend.title()}{self.__class__.__name__} {self.rate}\n{keys}>"
 
     def __str__(self) -> str:
         keys = ", ".join(f"{key.lstrip('_')}={getattr(self, key)}" for key in self.__slots__)
-        return f"<{self._backend.title()}{self.__class__.__name__} {keys}>"
+        return f"<{self.options.backend.title()}{self.__class__.__name__} {self.rate}\n{keys}>"
 
-    @abstractmethod
-    def ok(self):
-        pass
+    def connect(self, conn=None):
+        if self.options.backend == "memory":
+            if conn is not None and isinstance(conn, RatelimitInMemoryCache):
+                self._ratelimit_conn = conn
+            else:
+                self._ratelimit_conn = RatelimitInMemoryCache(options=self.options, default=self.default) # type: ignore
+
+        elif self.options.backend == "redis":
+            if conn is not None and isinstance(conn, Redis):
+                self._ratelimit_conn = conn
+            else:
+                self._ratelimit_conn = Redis(**self.options.redis_server_config())
+
+        elif self.options.backend == "sqlite":
+            if conn is not None and isinstance(conn, sqlite3.Connection):
+                self._ratelimit_conn = conn
+            else:
+                self._ratelimit_conn = sqlite3.connect(self.options.db)
+
+            try:
+                self._cursor = self._ratelimit_conn.cursor()
+            except:
+                self._cursor = self.newconn().cursor()
+            self._ratelimit_conn.row_factory = sqlite3.Row
+            self._create_tables()
 
     @property
     def default(self):
@@ -102,29 +108,44 @@ class Ratelimit(ABC):
 
     @property
     def cache(self):
-        if self._backend == "memory":
-            return self._instance._ratelimit_memory_conn
-        elif self._backend == "redis":
-            return self._instance._redis_conn # type: ignore
-        elif self._backend == "sqlite":
-            return self._instance._sqlite_conn # type: ignore
+        return self._ratelimit_conn
+
+    @property
+    def count(self):
+        return self._count
+
+    @property
+    def start_time(self):
+        return self._start_time
+
+    @property
+    def rate(self):
+        return self._count / (time.time() - self._start_time)
+
+    @property
+    def backend(self):
+        return self.options.backend
+
+    @property
+    def key(self):
+        return self.options.key
 
     def clear(self):
-        if self._backend == "memory":
+        if self.options.backend == "memory":
             return self.cache.clear()
-        elif self._backend == "redis":
+        elif self.options.backend == "redis":
             return self.cache.flushdb()
-        elif self._backend == "sqlite":
+        elif self.options.backend == "sqlite":
             return self.cache.clear()
 
     def _cleanup(self):
-        if self._backend == "redis":
+        if self.options.backend == "redis":
             self.cache._cleanup() # type: ignore
             self.cache.shutdown() # type: ignore
 
     @property
     def key(self):
-        return self._key
+        return self.options.key
 
     @property
     def current_timestampns(self):
@@ -148,7 +169,7 @@ class Ratelimit(ABC):
     def _parse_key(self, url=None, method=None, keys=None, **kwargs):
         url = self._parse_url(url)
         keys = keys if isinstance(keys, (list, tuple, set)) else []
-        key = ":".join(str(value) for value in (self._key, method, *keys, url, "ratelimit") if value is not None)
+        key = ":".join(str(value) for value in (self.options.key, method, *keys, url, "ratelimit") if value is not None)
         return key
 
     def _set_redis_key(self, key, func, *args, **kwargs):
@@ -162,6 +183,7 @@ class Ratelimit(ABC):
             if self.options.raise_errors:
                 raise InterruptedError("Rate limit exceeded.")
             time.sleep(self.options.sleep_duration)
+        self._count += 1
 
     async def increment_async(self, url=None, method=None, keys=None, **kwargs):
         key = self._parse_key(url=url, method=method, keys=keys)
@@ -169,11 +191,14 @@ class Ratelimit(ABC):
             if self.options.raise_errors:
                 raise InterruptedError("Rate limit exceeded.")
             await sleep(self.options.sleep_duration)
+        self._count += 1
+
+    @abstractmethod
+    def ok(self):
+        pass
 
 
 class RatelimitDecoratorMixin:
-    __slots__ = ()
-
     def __call__(self, func):
         if iscoroutinefunction(func):
             @wraps(func)

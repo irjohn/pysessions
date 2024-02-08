@@ -13,27 +13,34 @@ class UserAgents:
     """
 
     RNG = Random()
-    agents = (ua for ua in RNG.choices(_USER_AGENTS, k=1000))
+    CONSTANT = 1000
+    MAX = 25000
 
-    def __init__(self, n_requests=None):
-        self.set_agents(n_requests)
+
+    def __init__(self, multiplier=3):
+        self.n = 2
+        self.multiplier = multiplier
+        self.set_agents(self.n)
 
     def __call__(self):
-        return self.user_agent
+        try:
+            return next(self.agents)
+        except StopIteration:
+            self.n *= self.multiplier
+            self.set_agents(min(self.n, self.MAX))
+            return next(self.agents)
 
-    @classmethod
-    def set_agents(cls, n_requests=None):
+    def set_agents(self, n_requests=None):
         """
         Sets the user agents based on the number of requests.
 
         Args:
             n_requests: An integer representing the number of requests. If None, defaults to 1000.
         """
-        cls.agents = (ua for ua in cls.RNG.choices(_USER_AGENTS, k=n_requests or 1000))
+        self.agents = (ua for ua in self.RNG.choices(_USER_AGENTS, k=n_requests or self.CONSTANT))
 
-    @classmethod
     @property
-    def user_agent(cls):
+    def user_agent(self):
         """
         Returns the next user agent from the agents generator.
 
@@ -42,13 +49,12 @@ class UserAgents:
         Returns:
             A string representing the user agent.
         """
-        if not hasattr(cls, "agents"):
-            cls.set_agents()
         try:
-            return next(cls.agents)
+            return next(self.agents)
         except StopIteration:
-            cls.set_agents()
-            return next(cls.agents)
+            self.n *= self.multiplier
+            self.set_agents(min(self.n, self.MAX))
+            return next(self.agents)
 
 
 useragent = UserAgents()

@@ -21,21 +21,20 @@ class Cache(ABC):
         _key (str): The cache key.
     """
 
-    __slots__ = ("options", "_instance", "_backend", "_key")
+    __slots__ = ("options", "_instance")
 
     def __init__(
         self,
-        backend: str | None             = None,
-        key: str | None                 = None,
-        conn: Redis | None             = None,
-        cache_timeout: float | int      = 3600,
-        check_frequency: float | int    = 30,
+        backend: str | None                                           = None,
+        key: str | None                                               = None,
+        conn: CacheInMemoryCache | Redis | sqlite3.Connection | None  = None,
+        cache_timeout: float | int                                    = 3600,
+        check_frequency: float | int                                  = 30,
         **kwargs,
     ):
-        self._backend = backend
-        self._key = key if isinstance(key, str) else "Session"
 
         kwargs = {
+            "key": key,
             "cache_timeout": cache_timeout,
             "check_frequency": check_frequency,
             **kwargs
@@ -46,33 +45,37 @@ class Cache(ABC):
         elif kwargs.get("cache") is not None:
             kwargs = {**kwargs, **kwargs["cache"]}
 
-        self.options = CacheOptions.from_backend(backend, **kwargs)
+        self.options = CacheOptions.from_backend(backend=backend, **kwargs)
 
-        if self._backend == "memory":
-            if not hasattr(self._instance, "_memory_conn"):
-                self._instance.__class__._cache_memory_conn = CacheInMemoryCache(options=self.options) # type: ignore
+        if self.options.backend == "memory":
+            if conn is not None and isinstance(conn, CacheInMemoryCache):
+                self._cache_conn= conn
+            else:
+                self._cache_conn._cache_memory_conn = CacheInMemoryCache(options=self.options) # type: ignore
 
-        elif self._backend == "redis":
-            if not hasattr(self._instance, "_redis_conn") or not isinstance(self._instance._redis_conn, Redis):
-                self._instance.__class__._redis_conn = conn or Redis(**self.options.redis_server_config())
+        elif self.options.backend == "redis":
+            if conn is not None and isinstance(conn, Redis):
+                self._cache_conn= conn
+            else:
+                self._cache_conn._redis_conn = Redis(**self.options.redis_server_config())
 
-        elif self._backend == "sqlite":
-            assert self.options.db is not None, "Database file must be provided for SQLite cache."
-            if not hasattr(self._instance, "_sqlite_conn") or not isinstance(self._instance._sqlite_conn, sqlite3.Connection):
-                self._instance.__class__._sqlite_conn = conn or sqlite3.connect(self.options.db)
+        elif self.options.backend == "sqlite":
+            if conn is not None and isinstance(conn, sqlite3.Connection):
+                self._cache_conn= conn
+            else:
+                self._cache_conn._sqlite_conn = sqlite3.connect(self.options.db)
             if not hasattr(self, "_cursor"):
-                self._cursor = self._instance._sqlite_conn.cursor()
+                self._cursor = self._cache_conn.cursor()
             self._create_tables()
 
         register(self._cleanup)
 
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} cached={len(self.keys())}>"
+        return f"<{self.__class__.__name__} cached={self.num_cached}>"
 
     def __str__(self) -> str:
-        return f"<{self.__class__.__name__} cached={len(self.keys())}>"
-
+        return f"<{self.__class__.__name__} cached={self.num_cached}>"
 
     @property
     def cache(self):
@@ -82,12 +85,37 @@ class Cache(ABC):
         Returns:
             CacheInMemoryCache | Redis | sqlite3.Connection: The cache object.
         """
-        if self._backend == "memory":
-            return self._instance._cache_memory_conn
-        elif self._backend == "redis":
-            return self._instance._redis_conn
-        elif self._backend == "sqlite":
-            return self._instance._sqlite_conn
+        return self._cache_conn
+
+    @property
+    def backend(self) -> str:
+        """
+        Get the cache backend.
+
+        Returns:
+            str: The cache backend.
+        """
+        return self.options.backend
+
+    @property
+    def key(self) -> str:
+        """
+        Get the cache key.
+
+        Returns:
+            str: The cache key.
+        """
+        return self.options.key
+
+    @property
+    def num_cached(self) -> int:
+        """
+        Get the number of items cached.
+
+        Returns:
+            int: The number of items cached.
+        """
+        return len(self.keys())
 
     @abstractmethod
     def __contains__(self, key):
@@ -160,4 +188,4 @@ class Cache(ABC):
         Returns:
             str: The parsed cache key.
         """
-        return ":".join((self._key, url, "cache"))
+        return ":".join((self.options.key, url, "cache"))

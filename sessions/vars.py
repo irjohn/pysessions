@@ -1,3 +1,7 @@
+from .version import __httpx_version__, __aiohttp_version__, __python_version__
+
+AIOHTTP_DEFAULT_AGENT = f"Python/{__python_version__[0]}.{__python_version__[1]} aiohttp/{__aiohttp_version__}"
+HTTPX_DEFAULT_AGENT = f"python-httpx/{__httpx_version__}"
 
 IP_APIS = (
     "https://api.my-ip.io/ip",

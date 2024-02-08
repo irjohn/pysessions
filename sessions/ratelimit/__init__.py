@@ -6,8 +6,7 @@ from .pyratelimit import PyRatelimitFactory, PyRatelimitDecoratorFactory
 from .redis import RedisRatelimitFactory, RedisRatelimitDecoratorFactory
 from .sqlite import SQLiteRatelimitFactory
 from ..utils import get_valid_kwargs
-from ..objects import Alias
-
+from ..enums import Alias
 
 def ratelimit_factory(instance, backend="memory", *args, **kwargs):
     keys = set(kwargs.keys())
@@ -78,6 +77,10 @@ class RatelimitMixin:
     @property
     def backend(self):
         return self._backend
+
+    @property
+    def ratelimit_key(self):
+        return self.ratelimiter.options.key
 
     @property
     def ratelimit_type(self):

@@ -1,30 +1,34 @@
 import traceback
 import asyncio
-from time import perf_counter as _perf_counter
-from datetime import timedelta as _timedelta
+from time import perf_counter
+from datetime import timedelta
 from itertools import tee
 
-from orjson import dumps as _jsondump
-from alive_progress import alive_bar as _alive_bar
-from httpx import AsyncClient as _AsyncClient
+from orjson import dumps
+from alive_progress import alive_bar
+from multidict import CIMultiDict
+from httpx import (
+    AsyncClient as _AsyncClient,
+    Headers as HTTPXHeaders,
+)
 from aiohttp import (
-    ClientSession as _ClientSession,
+    ClientSession as ClientSession,
     ClientTimeout as AIOHTTPTimeout,
-    ClientError as _ClientError,
+    ClientError as ClientError,
 )
 
-from .meta import SessionMeta as _SessionMeta
-from .utils import get_valid_kwargs as _get_valid_kwargs, take as _take
+from .meta import SessionMeta as SessionMeta
+from .utils import get_valid_kwargs, take
 from .useragents import useragent
-from .objects import Response as _Response, Timeouts
+from .objects import Response
 from .config import SessionConfig as config
-
+from .enums import Timeouts
+from .vars import AIOHTTP_DEFAULT_AGENT
 
 def _dumps(obj):
-    return _jsondump(obj).decode("utf-8")
+    return dumps(obj).decode("utf-8")
 
-
-class AsyncSession(metaclass=_SessionMeta):
+class AsyncSession(metaclass=SessionMeta):
     """
     An asynchronous session for making HTTP requests.
 
@@ -32,7 +36,7 @@ class AsyncSession(metaclass=_SessionMeta):
         headers (dict, optional): Custom headers to be included in each request. Defaults to None.
         json_serialize (callable, optional): Custom JSON serialization function. Defaults to _dumps.
         random_user_agents (bool, optional): Whether to include random user agents in the request headers. Defaults to True.
-        **kwargs: Additional keyword arguments to be passed to the underlying _ClientSession.
+        **kwargs: Additional keyword arguments to be passed to the underlying ClientSession.
 
     Attributes:
         _random_user_agents (bool): Whether random user agents are enabled.
@@ -42,7 +46,7 @@ class AsyncSession(metaclass=_SessionMeta):
     Methods:
         __aenter__(): Asynchronous context manager entry point.
         __aexit__(exc_type, exc_value, exc_traceback): Asynchronous context manager exit point.
-        retrieve_response(resp): Asynchronously retrieve the response from a request.
+        retrieveresponse(resp): Asynchronously retrieve the response from a request.
         request(url, method, headers=None, *, bar=None, **kwargs): Asynchronously send a request.
         requests(urls, method="GET", *, headers=None, progress=True, **kwargs): Asynchronously send multiple requests.
         get(url, **kwargs): Asynchronously send a GET request.
@@ -57,7 +61,7 @@ class AsyncSession(metaclass=_SessionMeta):
 
     def __init__(
         self,
-        headers: dict | None                                = None,
+        headers: dict | CIMultiDict | HTTPXHeaders | None   = None,
         json_serialize: callable                            = _dumps,
         random_user_agents: bool                            = True,
         **kwargs
@@ -68,12 +72,12 @@ class AsyncSession(metaclass=_SessionMeta):
             except RuntimeError:
                 loop = asyncio.new_event_loop()
 
-        headers = headers if isinstance(headers, dict) else {}
+        headers = headers if isinstance(headers, (dict, HTTPXHeaders, CIMultiDict)) else {}
         kwargs["loop"] = loop
         kwargs["raise_errors"] = kwargs.pop("raise_errors", None) or config.raise_errors
         kwargs = self._parse_kwargs(kwargs)
-        kwargs = _get_valid_kwargs(_ClientSession.__init__, kwargs)
-        self._session = _ClientSession(headers=headers, json_serialize=json_serialize, **kwargs)
+        kwargs = get_valid_kwargs(ClientSession.__init__, kwargs)
+        self._session = ClientSession(headers=headers, json_serialize=json_serialize, **kwargs)
         self._random_user_agents = random_user_agents
         self._limit = max(self._session.connector.limit, 100) if self._session.connector.limit > 0 else 1
         if config.semaphore == "global":
@@ -81,21 +85,31 @@ class AsyncSession(metaclass=_SessionMeta):
         else:
             self._semaphore = asyncio.Semaphore(self._limit)
 
+    @property
+    def backend(self):
+        return self._backend
+
+    @property
+    def cache_key(self):
+        if "CacheMixin" in self.__bases__:
+            return self.cache.key
+
+    @property
+    def ratelimit_key(self):
+        if "RateLimitMixin" in self.__bases__:
+            return self.ratelimit.key
 
     async def __aenter__(self):
         return self
 
-
     async def __aexit__(self, exc_type, exc_value, exc_traceback):
         if exc_traceback:
-            import traceback
             traceback.print_exception(exc_type, exc_value, exc_traceback)
         await self._session.close()
 
-
     def _parse_kwargs(self, kwargs):
         keys = set(kwargs.keys())
-        timeouts = set(_take(lambda x: x in Timeouts.AIOHTTP.value, keys))
+        timeouts = set(take(lambda x: x in Timeouts.AIOHTTP.value, keys))
 
         if timeouts:
             args = {"total": kwargs.pop("timeout", None)}
@@ -114,9 +128,8 @@ class AsyncSession(metaclass=_SessionMeta):
             kwargs["timeout"] = AIOHTTPTimeout(**args)
         return kwargs
 
-
-    async def _retrieve_response(self, resp, callbacks, bar):
-        response = _Response(**{
+    async def _retrieve_response(self, resp, callbacks, bar, is_cache=False):
+        response = Response(**{
             "version": resp.version,
             "status": resp.status,
             "ok": resp.ok,
@@ -137,51 +150,45 @@ class AsyncSession(metaclass=_SessionMeta):
             "request": resp.request_info,
             "elapsed": resp.elapsed,
         })
-        return self._run_callbacks(response, callbacks, bar)
-
+        return self._run_callbacks(response, callbacks, bar, is_cache)
 
     async def request(self, url, method, headers=None, *, bar=None, callbacks=None, **kwargs):
         if self._random_user_agents:
-            headers = headers or {}
-            headers["User-Agent"] = useragent()
+            headers = headers if isinstance(headers, (dict, HTTPXHeaders, CIMultiDict)) else {}
+            if self._session.headers.get("user-agent") is None and headers.get("User-Agent") is None and headers.get("user-agent") is None:
+                headers["User-Agent"] = useragent()
 
-        kwargs = _get_valid_kwargs(_ClientSession._request, kwargs)
-        begin = _perf_counter()
+        kwargs = get_valid_kwargs(ClientSession._request, kwargs)
+        begin = perf_counter()
 
         try:
             async with self._session.request(method=method, url=url, headers=headers, **kwargs) as response:
-                end = _perf_counter()
-                response.elapsed = _timedelta(seconds=end - begin)
+                end = perf_counter()
+                response.elapsed = timedelta(seconds=end - begin)
                 return await self._retrieve_response(response, callbacks, bar)
 
         except asyncio.TimeoutError as e:
             if config.raise_errors:
                 raise e
-            response =_Response(status=408, errors=e, reason="TimeoutError", content=str(e))
+            response =Response(status=408, errors=e, reason="TimeoutError", content=str(e))
             return self._run_callbacks(response, callbacks, bar)
 
-
-        except _ClientError as e:
+        except ClientError as e:
             if config.raise_errors:
                 raise e
             if hasattr(response, "status") and response.status is not None:
                 status = response.status
             else:
                 status = 500
-            response = _Response(status=status, errors=e, reason="ClientError", content=str(e))
+            response = Response(status=status, errors=e, reason="ClientError", content=str(e))
             return self._run_callbacks(response, callbacks, bar)
 
         except Exception as e:
             if config.raise_errors:
                 raise e
-            response = _Response(status=500, errors=e, reason="Exception", content=str(e))
+            response = Response(status=500, errors=e, reason="Exception", content=str(e))
             return self._run_callbacks(response, callbacks, bar)
 
-
-
-
-
-    # NEEDS FIXED
     async def requests(self, urls, method="GET", *, headers=None, progress=True, ratelimit=True, use_cache=True, callbacks=None, **kwargs):
         if not isinstance(method, str) and isinstance(method, (list, tuple)):
             items = zip(urls, method)
@@ -191,7 +198,7 @@ class AsyncSession(metaclass=_SessionMeta):
         if progress:
             items, items_ = tee(items)
             item_length = sum(1 for _ in items_)
-            with _alive_bar(item_length) as bar:
+            with alive_bar(item_length) as bar:
                 results = await asyncio.gather(*(self.request(url=url, method=method, headers=headers, ratelimit=ratelimit, use_cache=use_cache, bar=bar, callbacks=callbacks, **kwargs) for url, method in items))
         else:
             results = await asyncio.gather(*(self.request(url=url, method=method, headers=headers, ratelimit=ratelimit, use_cache=use_cache, callbacks=callbacks, **kwargs) for url, method in items))
@@ -231,7 +238,7 @@ class AsyncClient(_AsyncClient):
     def __init__(self, headers=None, http2=True, random_user_agents=True, **kwargs):
         headers = headers if isinstance(headers, dict) else {}
         self._random_user_agents = random_user_agents
-        session_kwargs = _get_valid_kwargs(_AsyncClient.__init__, kwargs)
+        session_kwargs = get_valid_kwargs(_AsyncClient.__init__, kwargs)
         super().__init__(headers=headers, http2=http2, **session_kwargs)
         self._headers = headers
 
