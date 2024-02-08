@@ -1,5 +1,6 @@
 *.bak
 *.db
+*.txt
 play.py
 sessions_dev.sh
 proxies.tuple

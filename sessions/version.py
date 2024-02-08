@@ -1,6 +1,8 @@
 import pkg_resources
-from sys import version_info as __version__
+from sys import version_info
 
-__python_version__ = (__version__.major, __version__.minor)
+
+__version__ = "0.1.2"
+__python_version__ = (version_info.major, version_info.minor)
 __aiohttp_version__ = pkg_resources.get_distribution("aiohttp").version
 __httpx_version__ = pkg_resources.get_distribution("httpx").version
