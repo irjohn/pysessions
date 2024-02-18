@@ -1,8 +1,8 @@
 from enum import Enum
 
 class RatelimitParams(Enum):
-    SLIDINGWINDOW = {"limit", "period"}
-    FIXEDWINDOW = {"limit", "window"}
+    SLIDINGWINDOW = {"window", "limit"}
+    FIXEDWINDOW = {"window", "limit"}
     TOKENBUCKET = {"capacity", "fill_rate"}
     LEAKYBUCKET = {"capacity", "leak_rate"}
     GCRA = {"period", "limit"}
@@ -25,7 +25,7 @@ class Alias(Enum):
 
     GCRA = {"gcra", "GCRA", "gcra", "Gcra", "gcraratelimit", "gcra-ratelimit", "gcra_ratelimit", "gcraratelimiter", "gcra-ratelimiter", "gcra_ratelimiter", "gcraratelimiting", "gcra-ratelimiting", "gcra_ratelimiting", "gcraratelimitter", "gcra-ratelimitter", "gcra_ratelimitter", "gcraratelimiters", "gcra-ratelimiters", "gcra_ratelimiters", "gcraratelimitting", "gcra-ratelimitting", "gcra_ratelimitting"}
 
-    RATELIMIT_TYPE = {"type", "ratelimit", "ratelimiter", "ratelimit_type", "limiter", "limitertype", "limiter_type", "ratelimiter_type", "rate_limit", "rate-limit", "rate_limiter", "rate-limiter", "ratelimiting", "rate_limiting", "rate-limiting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting"}
+    RATELIMIT_TYPE = {"type", "ratelimit", "ratelimiter", "ratelimit_type", "ratelimittype", "limiter", "limitertype", "limiter_type", "ratelimiter_type", "rate_limit", "rate-limit", "rate_limiter", "rate-limiter", "ratelimiting", "rate_limiting", "rate-limiting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting", "ratelimitter", "rate_limitter", "rate-limitter", "ratelimiters", "rate_limiters", "rate-limiters", "ratelimitting", "rate_limitting", "rate-limitting"}
 
     MEMORY = {"memory", "mem", "py", "python", "pure", "inmemory", "in-memory", "in_memory", ":memory:", "inmemorycache", "in-memorycache", "in_memorycache", "inmemory_cache", "in-memory_cache", "in_memory_cache", "inmemorycacheobject", "in-memorycacheobject", "in_memorycacheobject", "inmemory_cacheobject", "in-memory_cacheobject", "in_memory_cacheobject"}
 

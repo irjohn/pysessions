@@ -15,7 +15,7 @@ setup(
         "yarl",
         "redislite",
         "redis",
-        "termcolor"
+        "termcolor",
     ],
     extras_require={
         "all": ["redislite", "stem"],

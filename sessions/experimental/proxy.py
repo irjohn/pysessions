@@ -11,7 +11,7 @@ from dotenv import dotenv_values
 from requests import Session
 from requests.auth import HTTPProxyAuth
 
-from .useragents import useragent
+from ..useragents import useragent
 
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 _NORDVPN_SERVER_URL = "https://nordvpn.com/api/server"

@@ -58,7 +58,7 @@ class PackageConfig:
 
         sep = "|"
         line_sep = sep + "-" * (max_line_length) + sep
-        header = f"<Sessions Package Config>\n{line_sep}\n| field {sep:>{max_var_length - len('field') + 1}} value |\n{line_sep}"
+        header = f"<Sessions Package Config>\n{line_sep}\n| field {sep:>{max_var_length - len('field') + 1}} value|\n{line_sep}"
 
         lines = [f"| {key} {sep:>{max_var_length - len(key) + 1}} {value}" for key, value in items]
         lines = [f"\n{line}{' ' * (max_line_length - len(line) + 1)}{sep}" for line in lines]

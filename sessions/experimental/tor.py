@@ -15,8 +15,8 @@ if _has_stem:
     from functools import wraps as _wraps
     from requests import Session as _Session
 
-    from .useragents import UserAgents as _UserAgents
-    from .vars import  IP_APIS as _IP_APIS
+    from ..useragents import UserAgents as _UserAgents
+    from ..vars import  IP_APIS as _IP_APIS
 
 
     def _check_tor_service():

@@ -1,34 +1,9 @@
 import inspect
-from dataclasses import dataclass
 from time import perf_counter
 from functools import wraps
 from random import Random
-from math import floor as _floor
 
 from .vars import STATUS_CODES
-
-
-_slidingwindow_target = lambda window, limit, n_tests, **kwargs: ((window / limit) * n_tests, window)
-_tokenbucket_target =   lambda capacity, fill_rate, n_tests, **kwargs: ((capacity / fill_rate * (n_tests - capacity)), capacity / fill_rate)
-_leakybucket_target =   lambda capacity, leak_rate, n_tests, **kwargs: ((n_tests - capacity) / leak_rate, leak_rate / capacity)
-_fixedwindow_target =   lambda window, limit, n_tests, **kwargs: ((n_tests / limit) * window, window)
-_gcra_target =          lambda period, limit, n_tests, **kwargs: ((n_tests - (capacity := _floor(limit / period))) * period + (limit if n_tests <= capacity else 0), period)
-_target =               lambda type, **kwargs: globals()[f"_{type}_target"](**kwargs)
-
-def get_target_time(type, **kwargs):
-    """
-    Returns the target time and delta for the given type.
-
-    Args:
-        type (str): The type of the session algorithm.
-        kwargs (dict): The keyword arguments.
-
-    Returns:
-        tuple: The target time and delta for the given type.
-
-    """
-    return _target(type, **kwargs)
-
 
 
 def take(predicate, iterable):

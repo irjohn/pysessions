@@ -19,7 +19,7 @@ class TokenBucket(Ratelimit):
     """
 
     __slots__ = ("_ratelimit_conn", "_capacity", "_fill_rate")
-    __dc__ = make_dataclass("TokenBucketCache", (("tokens", float), ("last_check", float), ("last_update", float)), slots=True, eq=False)
+    __dc__ = make_dataclass("TokenBucketCache", (("tokens", float), ("last_check", float), ("expiration", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class TokenBucket(Ratelimit):
         self._fill_rate = fill_rate
 
 
-    def default(self):
+    def default(self, value=None):
         """
         Returns the default token bucket cache.
 
@@ -41,7 +41,7 @@ class TokenBucket(Ratelimit):
             TokenBucketCache: The default token bucket cache with tokens set to the capacity and last_check and last_update set to the current time.
         """
         now = self.now
-        return self.__dc__(tokens=self._capacity, last_check=now, last_update=now)
+        return self.__dc__(tokens=self._capacity, last_check=now, expiration=now + self.options.cache_timeout)
 
 
     def get_tokens(self, key):
@@ -54,20 +54,21 @@ class TokenBucket(Ratelimit):
         Returns:
             TokenBucketCache: The updated token bucket cache.
         """
-        # Retrieve data
-        data = self._ratelimit_conn[key]
+        with self._pool.acquire() as conn:
+            # Retrieve data
+            data = conn[key]
 
-        # Calculate the time elapsed since the last fill
-        current = time()
-        elapsed = current - data.last_check # type: ignore
+            # Calculate the time elapsed since the last fill
+            current = time()
+            elapsed = current - data.last_check # type: ignore
 
-        # Calculate the number of tokens to add based on the fill rate
-        to_add = elapsed * (self._fill_rate / self._capacity)
+            # Calculate the number of tokens to add based on the fill rate
+            to_add = elapsed * (self._fill_rate / self._capacity)
 
-        # Set the new number of tokens (up to capacity)
-        data.tokens = min(self._capacity, data.tokens + to_add) # type: ignore
-        data.last_check = current # type: ignore
-        return data
+            # Set the new number of tokens (up to capacity)
+            data.tokens = min(self._capacity, data.tokens + to_add) # type: ignore
+            data.last_check = current # type: ignore
+            return data
 
 
     def ok(self, key):
@@ -83,14 +84,12 @@ class TokenBucket(Ratelimit):
         data = self.get_tokens(key)
         if data.tokens >= 1: # type: ignore
             data.tokens -= 1 # type: ignore
-            data.last_update = time() # type: ignore
+            data.expiration = time() + self.options.cache_timeout # type: ignore
             return True
-        data.last_update = time() # type: ignore
+        data.expiration = time() + self.options.cache_timeout # type: ignore
         return False
 
 
-# The `LeakyBucket` class is a decorator that implements a rate limit for a given function
-# using the leaky bucket algorithm.
 class LeakyBucket(Ratelimit):
     """
     LeakyBucket class represents a rate limiter based on the leaky bucket algorithm.
@@ -106,7 +105,7 @@ class LeakyBucket(Ratelimit):
     """
 
     __slots__ = ("_ratelimit_conn", "_capacity", "_leak_rate")
-    __dc__ = make_dataclass("LeakyBucketCache", (("content", float), ("last_checked", float), ("last_update", float)), slots=True, eq=False)
+    __dc__ = make_dataclass("LeakyBucketCache", (("content", float), ("last_checked", float), ("expiration", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -120,7 +119,7 @@ class LeakyBucket(Ratelimit):
         self._leak_rate = leak_rate
 
 
-    def default(self):
+    def default(self, value=None):
         """
         Returns the default cache data for a key.
 
@@ -128,7 +127,7 @@ class LeakyBucket(Ratelimit):
             LeakyBucketCache: The default cache data for a key.
         """
         now = self.now
-        return self.__dc__(content=0, last_checked=now, last_update=now)
+        return self.__dc__(content=0, last_checked=now, expiration=now + self.options.cache_timeout)
 
 
     def _leak(self, key):
@@ -141,18 +140,18 @@ class LeakyBucket(Ratelimit):
         Returns:
             LeakyBucketCache: The updated cache data after leaking requests.
         """
-        data = self._ratelimit_conn[key]
-        content = data.content # type: ignore
+        with self._pool.acquire() as conn:
+            data = conn[key]
 
-        # Calculate the amount of time that has passed
-        current_time = time()
-        elapsed = current_time - data.last_checked # type: ignore
-        data.last_checked = current_time # type: ignore
+            # Calculate the amount of time that has passed
+            current_time = time()
+            elapsed = current_time - data.last_checked # type: ignore
+            data.last_checked = current_time # type: ignore
 
-        # Leak the appropriate amount of requests
-        data.content -= elapsed * self._leak_rate # type: ignore
-        data.content = max(data.content, 0) # type: ignore
-        return data
+            # Leak the appropriate amount of requests
+            data.content -= elapsed * self._leak_rate # type: ignore
+            data.content = max(data.content, 0) # type: ignore
+            return data
 
 
     def ok(self, key):
@@ -168,15 +167,15 @@ class LeakyBucket(Ratelimit):
         data = self._leak(key)
         if data.content < self._capacity: # type: ignore
             data.content += 1 # type: ignore
-            data.last_update = time() # type: ignore
+            data.expiration = time() + self.options.cache_timeout # type: ignore
             return True
-        data.last_update = time() # type: ignore
+        data.expiration = time() + self.options.cache_timeout # type: ignore
         return False
 
 
 class SlidingWindow(Ratelimit):
     __slots__ = ("_ratelimit_conn", "_limit", "_window")
-    __dc__ = make_dataclass("SlidingWindowCache", (("pre_count", float), ("cur_count", float), ("cur_time", float), ("last_update", float)), slots=True, eq=False)
+    __dc__ = make_dataclass("SlidingWindowCache", (("pre_count", float), ("cur_count", float), ("cur_time", float), ("expiration", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -190,30 +189,31 @@ class SlidingWindow(Ratelimit):
         self._window = window
 
 
-    def default(self):
+    def default(self, value=None):
         now = self.now
-        return self.__dc__(pre_count=self._limit, cur_count=0, cur_time=now, last_update=now)
+        return self.__dc__(pre_count=self._limit, cur_count=0, cur_time=now, expiration=now + self.options.cache_timeout)
 
 
     def ok(self, key):
-        data = self._ratelimit_conn[key]
-        if ((time_ := time()) - data.cur_time) > self._window: # type: ignore
-            data.cur_time = time_ # type: ignore
-            data.pre_count = data.cur_count # type: ignore
-            data.cur_count = 0 # type: ignore
+        with self._pool.acquire() as conn:
+            data = conn[key]
+            if ((time_ := time()) - data.cur_time) > self._window: # type: ignore
+                data.cur_time = time_ # type: ignore
+                data.pre_count = data.cur_count # type: ignore
+                data.cur_count = 0 # type: ignore
 
-        ec = (data.pre_count * (self._window - (time() - data.cur_time)) / self._window) + data.cur_count # type: ignore
-        if ec < self._limit:
-            data.cur_count += 1 # type: ignore
-            data.last_update = time() # type: ignore
-            return True
-        data.last_update = time() # type: ignore
-        return False
+            ec = (data.pre_count * (self._window - (time() - data.cur_time)) / self._window) + data.cur_count # type: ignore
+            if ec < self._limit:
+                data.cur_count += 1 # type: ignore
+                data.expiration = time() + self.options.cache_timeout # type: ignore
+                return True
+            data.expiration = time() + self.options.cache_timeout # type: ignore
+            return False
 
 
 class FixedWindow(Ratelimit):
     __slots__ = ("_ratelimit_conn", "_limit", "_window")
-    __dc__ = make_dataclass("FixedWindowCache", (("window_start", float), ("requests", float), ("last_update", float)), slots=True, eq=False)
+    __dc__ = make_dataclass("FixedWindowCache", (("window_start", float), ("requests", float), ("expiration", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -227,29 +227,28 @@ class FixedWindow(Ratelimit):
         self._limit = limit
 
 
-    def default(self):
+    def default(self, value=None):
         now = self.now
-        return self.__dc__(window_start=now, requests=0, last_update=now)
+        return self.__dc__(window_start=now, requests=0, expiration=now + self.options.cache_timeout)
 
 
     def ok(self, key):
-        data = self._ratelimit_conn[key]
-        window_start = data.window_start # type: ignore
-        current_time = time()
-        if current_time - window_start > self._window:
-            data.requests = 0 # type: ignore
-            data.window_start = current_time # type: ignore
+        with self._pool.acquire() as conn:
+            data = conn[key]
+            window_start = data.window_start # type: ignore
+            current_time = time()
+            if current_time - window_start > self._window:
+                data.requests = 0 # type: ignore
+                data.window_start = current_time # type: ignore
 
-        if data.requests < self._limit: # type: ignore
-            data.requests += 1 # type: ignore
-            data.last_update = time() # type: ignore
-            return True
-        data.last_update = time() # type: ignore
-        return False
+            if data.requests < self._limit: # type: ignore
+                data.requests += 1 # type: ignore
+                data.expiration = time() + self.options.cache_timeout # type: ignore
+                return True
+            data.expiration = time() + self.options.cache_timeout # type: ignore
+            return False
 
 
-# The `GCRA` class is a decorator that limits the rate at which a function can be called
-# based on a specified rate and burst size.
 class GCRA(Ratelimit):
     """
     GCRA (Generic Cell Rate Algorithm) is a rate limiting algorithm that allows a burst of requests
@@ -266,8 +265,8 @@ class GCRA(Ratelimit):
     """
 
     __slots__ = ("_ratelimit_conn", "_period", "_limit")
-    __dc__ = make_dataclass("GCRACache", (("last_time", float), ("last_update", float)), slots=True, eq=False)
-    #__dc__ = make_dataclass("GCRACache", (("tat", float), ("last_update", float)), slots=True, eq=False)
+    __dc__ = make_dataclass("GCRACache", (("last_time", float), ("expiration", float)), slots=True, eq=False)
+    #__dc__ = make_dataclass("GCRACache", (("tat", float), ("expiration", float)), slots=True, eq=False)
 
     def __init__(
         self,
@@ -281,7 +280,7 @@ class GCRA(Ratelimit):
         self._limit = limit  # Limit on the burst size (in seconds)
 
 
-    def default(self):
+    def default(self, value=None):
         """
         Returns the default cache data object.
 
@@ -289,8 +288,8 @@ class GCRA(Ratelimit):
             GCRACache: The default cache data object with last_time and last_update set to the current time.
         """
         now = self.now
-        return self.__dc__(last_time=now, last_update=now)
-        #return self.__dc__(tat=0, last_update=now)
+        return self.__dc__(last_time=now, expiration=now + self.options.cache_timeout)
+        #return self.__dc__(tat=0, expiration=now + self.options.cache_timeout)
 
 
     def ok(self, key):
@@ -303,19 +302,20 @@ class GCRA(Ratelimit):
         Returns:
             bool: True if the request is allowed, False otherwise.
         """
-        data = self._ratelimit_conn[key]
-        current_time = time()
-        expected_time = data.last_time + self._period
+        with self._pool.acquire() as conn:
+            data = conn[key]
+            current_time = time()
+            expected_time = data.last_time + self._period
 
-        if current_time < expected_time - self._limit:
-            # The cell/token arrives too early and does not conform.
-            data.last_update = current_time # type: ignore
-            return False
-        else:
-            # The cell/token conforms; update the last_time.
-            data.last_time = max(expected_time, current_time) # type: ignore
-            data.last_update = current_time # type: ignore
-            return True
+            if current_time < expected_time - self._limit:
+                # The cell/token arrives too early and does not conform.
+                data.expiration = current_time + self.options.cache_timeout # type: ignore
+                return False
+            else:
+                # The cell/token conforms; update the last_time.
+                data.last_time = max(expected_time, current_time) # type: ignore
+                data.expiration = current_time + self.options.cache_timeout # type: ignore
+                return True
 
 
 _CLASS_TYPES = {
@@ -343,6 +343,6 @@ class PyRatelimitFactory:
         type = _CLASS_TYPES[type_name]
         self = type.__new__(type)
         self._instance = instance
-        self.__init__(*args, **kwargs)
         self._ratelimit_type = type_name
+        self.__init__(*args, **kwargs)
         return self

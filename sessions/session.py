@@ -1,10 +1,9 @@
-__all__ = "Session", "RequestsSession"
+__all__ = "Session", "AsyncSession" "RequestsSession"
 
 import traceback
 import asyncio
 from concurrent.futures import as_completed
 from itertools import tee
-from atexit import register as _register
 from typing import (
     List,
     Tuple,
@@ -14,7 +13,12 @@ from typing import (
 
 from multidict import CIMultiDict
 from alive_progress import alive_bar
-from requests import Session as _Session
+from requests import Session as _RequestsSession
+from alive_progress import alive_bar
+from aiohttp import (
+    ClientSession as ClientSession,
+    ClientError as ClientError,
+)
 from httpx._exceptions import TimeoutException
 from httpx import (
     Client as HTTPXSession,
@@ -23,27 +27,42 @@ from httpx import (
     Headers as HTTPXHeaders,
 )
 
-from .asyncsession import AsyncSession as _AsyncSession
+
+from .base import BaseSession
+from .asyncsession import AsyncSession
+from .cache import cache_factory
+from .ratelimit import ratelimit_factory
 from .thread import AsyncLoopThread
 from .config import SessionConfig as config
-from .meta import SessionMeta
 from .useragents import useragent
-from .objects import Response
+from .objects import Request, Response
 from .enums import Timeouts as Timeouts
 from .utils import take, get_valid_kwargs
 from .vars import HTTPX_DEFAULT_AGENT
+from itertools import tee
 
 
-class Session(HTTPXSession, metaclass=SessionMeta):
+
+from .utils import get_valid_kwargs, take
+from .useragents import useragent
+from .objects import Response
+from .config import SessionConfig as config
+from .enums import Timeouts
+
+
+class Session(HTTPXSession, BaseSession):
     _ID = 0
 
     def __init__(
         self,
+        *,
         headers: dict | CIMultiDict | HTTPXHeaders | None   = None,
         http2: bool                                         = True,
         random_user_agents: bool                            = True,
         threaded: bool                                      = True,
-        backend: str                                        = None,
+        backend: str                                        = "memory",
+        cache: bool                                         = False,
+        ratelimit: bool                                     = False,
         **kwargs
     ):
         """
@@ -63,45 +82,24 @@ class Session(HTTPXSession, metaclass=SessionMeta):
         self._raise_errors = kwargs.pop("raise_errors", None) or config.raise_errors
         self._headers = headers if isinstance(headers, (dict, HTTPXHeaders, CIMultiDict)) else {}
         self._random_user_agents = random_user_agents
+        self._use_cache = cache
+        self._use_ratelimit = ratelimit
 
         if self._threaded:
             kwargs["timeout"] = kwargs.pop("timeout", None) or config.threaded_timeout
             self._loop = asyncio.new_event_loop()
             self._thread = AsyncLoopThread(target=self.__start_event_loop, name=f"Session {self._id}-EventLoopThread", daemon=True)
             self._thread.start()
-
         self.__kwargs = kwargs.copy()
         kwargs = self._parse_kwargs(kwargs)
 
+        self._ratelimiter = ratelimit_factory(self, backend=self._backend, **kwargs)
+        self._cache = cache_factory(self, backend=self._backend, **kwargs)
         kwargs = get_valid_kwargs(HTTPXSession.__init__, kwargs)
         super().__init__(http2=http2, headers=self._headers, **kwargs)
 
-
     def __repr__(self):
         return f"<Session(HTTPX) id={self._id} backend={self._backend}>"
-
-    @property
-    def conn(self):
-        if self._backend == "redis":
-            return self._redis_conn
-        elif self._backend == "sqlite":
-            return self._sqlite_conn
-        elif "CacheMixin" in self.__bases__ and self._backend == "memory":
-            return self._cache_memory_conn
-
-    @property
-    def backend(self):
-        return self._backend
-
-    @property
-    def cache_key(self):
-        if "CacheMixin" in self.__bases__:
-            return self.cache.key
-
-    @property
-    def ratelimit_key(self):
-        if "RateLimitMixin" in self.__bases__:
-            return self.ratelimit.key
 
     def __enter__(self):
         return self
@@ -111,11 +109,15 @@ class Session(HTTPXSession, metaclass=SessionMeta):
             traceback.print_exception(exc_type, exc_value, exc_traceback)
         self._cleanup()
 
+
     def _cleanup(self):
         if self._threaded and hasattr(self, "_loop"):
             self._thread.stop()
             self._loop.close()
+        self._ratelimiter._cleanup()
+        self._cache._cleanup()
         self.close()
+
 
     def _parse_kwargs(self, kwargs):
         keys = set(kwargs.keys())
@@ -157,25 +159,27 @@ class Session(HTTPXSession, metaclass=SessionMeta):
                     )
         return kwargs
 
-    def _retrieve_response(self, resp, callbacks, bar, is_cache=False):
+    def _retrieve_response(self, response, callbacks, bar, is_cache=False):
         response = Response(**{
-            "version":  resp.http_version,
-            "status":   resp.status_code,
-            "ok":       resp.status_code < 400,
-            "method":   resp.request.method,
-            "reason":   resp.reason_phrase,
-            "url":      resp.url,
-            "content":  resp.content,
-            "encoding": resp.encoding,
-            "cookies":  resp.cookies,
-            "headers":  resp.headers,
-            "history":  resp.history,
-            "request":  resp.request,
-            "elapsed":  resp.elapsed,
+            "ok":       response.status_code < 400,
+            "version":  response.http_version   or None,
+            "status":   response.status_code    or None,
+            "method":   response.request.method or None,
+            "reason":   response.reason_phrase  or None,
+            "url":      response.url            or None,
+            "content":  response.content        or None,
+            "encoding": response.encoding       or None,
+            "cookies":  response.cookies        or None,
+            "headers":  response.headers        or None,
+            "history":  response.history        or None,
+            "request":  response.request        or None,
+            "elapsed":  response.elapsed        or None,
         })
         return self._run_callbacks(response, callbacks, bar, is_cache)
 
-    def request(self, method, url, *, headers=None, threaded=False, bar=None, callbacks=None, **kwargs):
+    @BaseSession._cache_decorator
+    @BaseSession._ratelimit_decorator
+    def request(self, method, url, *, headers=None, threaded=False, bar=None, callbacks=None, keys=None, cache=False, ratelimit=False, **kwargs):
         """
         Sends an HTTP request.
 
@@ -189,29 +193,33 @@ class Session(HTTPXSession, metaclass=SessionMeta):
         Returns:
             The response from the HTTP request.
         """
+
         if self._random_user_agents:
             headers = headers if isinstance(headers, (dict, HTTPXHeaders, CIMultiDict)) else {}
             if self.headers.get("user-agent") == HTTPX_DEFAULT_AGENT and headers.get("User-Agent") is None and headers.get("user-agent") is None:
                 headers["User-Agent"] = useragent()
 
         kwargs = get_valid_kwargs(super().request, kwargs)
+
         try:
             response = super().request(method=method, url=url, headers=headers, **kwargs)
-            return self._retrieve_response(response, callbacks, bar)
+
         except TimeoutException as e:
             if self._raise_errors:
                 raise e
-            return Response(status=408, ok=False, reason="Request Timeout", url=url, errors=e)
+            response = Response(status=408, ok=False, reason="Request Timeout", url=url, method=method, request=Request(url=url, method=method, headers=headers), errors=e)
         except Exception as e:
             if self._raise_errors:
                 raise e
-            return Response(status=500, ok=False, reason="Internal Server Error", url=url, errors=e)
+            response = Response(status=500, ok=False, reason="Internal Server Error", url=url, method=method, request=Request(url=url, method=method, headers=headers), errors=e)
+
+        response = self._retrieve_response(response, callbacks, bar)
+
+        return response
 
     @property
     def __async_session(self):
-        class AsyncSession(*(base for name, base in self.__bases__.items() if name.endswith("Mixin")), _AsyncSession):
-            pass
-        return AsyncSession(loop=self._loop, conn=self.conn, backend=self._backend, **self.__kwargs)
+        return AsyncSession(loop=self._loop, backend=self._backend, **self.__kwargs)
 
     def __start_event_loop(self):
         asyncio.set_event_loop(self._loop)
@@ -362,12 +370,12 @@ class Session(HTTPXSession, metaclass=SessionMeta):
         return self.request(method="PATCH", url=url, **kwargs)
 
 
-class RequestsSession(_Session, metaclass=SessionMeta):
+class RequestsSession(_RequestsSession, BaseSession):
     def __init__(
         self,
         headers=None,
         random_user_agents=True,
-        threaded=False,
+        threaded=True,
         **kwargs
     ):
         """
@@ -390,7 +398,7 @@ class RequestsSession(_Session, metaclass=SessionMeta):
             self._loop = asyncio.new_event_loop()
             self._thread = AsyncLoopThread(target=self.__start_event_loop, name=f"Session {self._id}-EventLoopThread", daemon=True)
             self._thread.start()
-            _register(self._cleanup)
+        _register(self._shutdown)
 
     def __enter__(self):
         return self

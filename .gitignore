@@ -1,9 +1,10 @@
 *.bak
 *.db
 *.txt
+*snippet*.py
 play.py
 sessions_dev.sh
-proxies.tuple
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

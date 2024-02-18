@@ -1,9 +1,10 @@
 from random import Random
 
-from .vars import USER_AGENTS as _USER_AGENTS
+from .vars import USER_AGENTS
 
 
 class UserAgents:
+    __slots__ = ("agents", "n", "multiplier", "constant")
     """
     A class for generating user agents.
 
@@ -13,12 +14,12 @@ class UserAgents:
     """
 
     RNG = Random()
-    CONSTANT = 1000
     MAX = 25000
 
 
-    def __init__(self, multiplier=3):
-        self.n = 2
+    def __init__(self, *, multiplier=None, constant=None):
+        assert multiplier is not None or constant is not None, "Either multiplier or constant must be provided."
+        self.n = constant or 2
         self.multiplier = multiplier
         self.set_agents(self.n)
 
@@ -30,14 +31,14 @@ class UserAgents:
             self.set_agents(min(self.n, self.MAX))
             return next(self.agents)
 
-    def set_agents(self, n_requests=None):
+    def set_agents(self, n_requests):
         """
         Sets the user agents based on the number of requests.
 
         Args:
             n_requests: An integer representing the number of requests. If None, defaults to 1000.
         """
-        self.agents = (ua for ua in self.RNG.choices(_USER_AGENTS, k=n_requests or self.CONSTANT))
+        self.agents = (ua for ua in self.RNG.choices(USER_AGENTS, k=n_requests))
 
     @property
     def user_agent(self):
@@ -52,9 +53,10 @@ class UserAgents:
         try:
             return next(self.agents)
         except StopIteration:
-            self.n *= self.multiplier
+            if self.multiplier is not None:
+                self.n *= self.multiplier
             self.set_agents(min(self.n, self.MAX))
             return next(self.agents)
 
 
-useragent = UserAgents()
+useragent = UserAgents(multiplier=3)

@@ -28,11 +28,11 @@ urls = Urls("http://httpbin.org")
 color_time = lambda time: colored(f"{time:.2f}", "light_blue")
 color_type = lambda type: colored(type.upper(), "light_yellow")
 
-class Session(RatelimitMixin, Session):
-    pass
-
-class AsyncSession(RatelimitMixin, AsyncSession):
-    pass
+#class Session(RatelimitMixin, Session):
+#    pass
+#
+#class AsyncSession(RatelimitMixin, AsyncSession):
+#    pass
 
 
 
@@ -93,6 +93,7 @@ def make_test(
     typename: str,
     dct: bool                 = False,
     target_time: float        = 0.0,
+    tolerance: float | int    = 0.0,
     debug: bool               = False,
     **kwargs
 ):
@@ -166,6 +167,7 @@ def make_test(
             else:
                 break
             previous_times.append(current_time)
+    delta += tolerance
     return tuple(kwargs.values()) if not dct else kwargs
 
 def print_test_headers(type, target_time, delta, kwargs):
@@ -180,6 +182,7 @@ class RatelimitResult:
     message: str
     backend: str
     ratelimit_type: str
+    tolerance: float
     execution_time: float
     target_time: float
     delta: float
@@ -217,34 +220,34 @@ def ratelimit_timer(func):
     """
     if inspect.iscoroutinefunction(func):
         @wraps(func)
-        async def wrapper(n_tests, urls=None, min=0, max=5, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs): # type: ignore
+        async def wrapper(n_tests, *, urls=None, min=0, max=5, tolerance=0.0, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs): # type: ignore
             start = perf_counter()
             args, avg_execution = await func(n_tests, urls=urls, min=min, max=max, type=type, backend=backend, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, **kwargs)
             end = perf_counter()
 
             target_time, delta = get_target_time(type, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, n_tests=n_tests)
-            delta += avg_execution
+            delta += (avg_execution + tolerance)
             execution_time = end - start
             observed_delta = execution_time - target_time
             test_passed = abs(observed_delta) <= delta
-            message = f"{func.__name__} took {color_time(execution_time)}, Expected {color_time(target_time)}s within {color_time(delta)}s delta for {type}. Observed Delta ({color_time(observed_delta)}s) {PASSED if test_passed else FAILED}"
+            message = f"[{func.__name__}] {PASSED if test_passed else FAILED} took {color_time(execution_time)}, Expected {color_time(target_time)}s within {color_time(delta)}s delta for {type}. Observed Delta ({color_time(observed_delta)}s) "
             print(message)
-            return RatelimitResult(func.__name__, message, backend, type, execution_time, target_time, delta, observed_delta, test_passed, **args)
+            return RatelimitResult(func.__name__, message, backend, type, tolerance, execution_time, target_time, delta, observed_delta, test_passed, **args)
     else:
         @wraps(func)
-        def wrapper(n_tests, urls=None, min=0, max=5, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs):
+        def wrapper(n_tests, *, urls=None, min=0, max=5, tolerance=0.0, type="slidingwindow", backend="memory", limit=5, window=1, capacity=5, fill_rate=5, leak_rate=5, period=5, **kwargs):
             start = perf_counter()
-            args, avg_execution = func(n_tests, urls=urls, min=min, max=max, type=type, backend=backend, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, **kwargs)
+            args, avg_execution = func(n_tests, urls=urls, min=min, max=max, cache=False, type=type, backend=backend, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, **kwargs)
             end = perf_counter()
 
             target_time, delta = get_target_time(type, limit=limit, window=window, capacity=capacity, fill_rate=fill_rate, leak_rate=leak_rate, period=period, n_tests=n_tests)
-            delta += avg_execution
+            delta += (avg_execution + tolerance)
             execution_time = end - start
             observed_delta = execution_time - target_time
             test_passed = abs(observed_delta) <= delta
-            message = f"{func.__name__} took {color_time(execution_time)}, Expected {color_time(target_time)}s within {color_time(delta)}s delta for {type}. Observed Delta ({color_time(observed_delta)}s) {PASSED if test_passed else FAILED}"
+            message = f"[{func.__name__}] {PASSED if test_passed else FAILED} took {color_time(execution_time)}, Expected {color_time(target_time)}s within {color_time(delta)}s delta for {type}. Observed Delta ({color_time(observed_delta)}s) {PASSED if test_passed else FAILED}"
             print(message)
-            return RatelimitResult(func.__name__, message, backend, type, execution_time, target_time, delta, observed_delta, test_passed, **args)
+            return RatelimitResult(func.__name__, message, backend, type, tolerance, execution_time, target_time, delta, observed_delta, test_passed, **args)
     return wrapper
 
 
@@ -255,9 +258,9 @@ def ratelimit_timer(func):
 @ratelimit_timer
 def test_memory(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
-    with Session(backend="memory", **kwargs) as session:
+    with Session(backend="memory", ratelimit=True, **kwargs) as session:
         results = tuple(map(session.get, urls.RANDOM_URLS(n_tests, min, max)))
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     kwargs["n_tests"] = n_tests
     return extract_args(kwargs["type"], kwargs), avg_exc
@@ -266,18 +269,18 @@ def test_memory(n_tests=25, min=0, max=5, **kwargs):
 def test_sqlite(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
     kwargs.pop("db", None)
-    with Session(backend="sqlite", db="test.db", **kwargs) as session:
+    with Session(backend="sqlite", db="test.db", ratelimit=True, **kwargs) as session:
         results = tuple(map(session.get, urls.RANDOM_URLS(n_tests, min, max)))
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     return extract_args(kwargs["type"], kwargs), avg_exc
 
 @ratelimit_timer
 def test_redis(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
-    with Session(backend="redis", **kwargs) as session:
+    with Session(backend="redis", ratelimit=True, **kwargs) as session:
         results = tuple(map(session.get, urls.RANDOM_URLS(n_tests, min, max)))
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     kwargs["n_tests"] = n_tests
     return extract_args(kwargs["type"], kwargs), avg_exc
@@ -286,9 +289,9 @@ def test_redis(n_tests=25, min=0, max=5, **kwargs):
 @ratelimit_timer
 async def atest_memory(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
-    async with AsyncSession(backend="memory", **kwargs) as session:
+    async with AsyncSession(backend="memory", ratelimit=True, **kwargs) as session:
         results = await asyncio.gather(*[session.get(url) for url in urls.RANDOM_URLS(n_tests, min=min, max=max)])
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     kwargs["n_tests"] = n_tests
     return extract_args(kwargs["type"], kwargs), avg_exc
@@ -297,24 +300,35 @@ async def atest_memory(n_tests=25, min=0, max=5, **kwargs):
 async def atest_sqlite(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
     kwargs.pop("db", None)
-    async with AsyncSession(backend="sqlite", db="test.db", **kwargs) as session:
+    async with AsyncSession(backend="sqlite", db="test.db", ratelimit=True, **kwargs) as session:
         results = await asyncio.gather(*[session.get(url) for url in urls.RANDOM_URLS(n_tests, min=min, max=max)])
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     return extract_args(kwargs["type"], kwargs), avg_exc
 
 @ratelimit_timer
 async def atest_redis(n_tests=25, min=0, max=5, **kwargs):
     kwargs.pop("backend", None)
-    async with AsyncSession(backend="redis", **kwargs) as session:
+    async with AsyncSession(backend="redis", ratelimit=True, **kwargs) as session:
         results = await asyncio.gather(*[session.get(url) for url in urls.RANDOM_URLS(n_tests, min=min, max=max)])
-        session.clear_cache()
+
     avg_exc =  sum((i.elapsed.total_seconds() for i in results))/len(results)
     kwargs["n_tests"] = n_tests
     return extract_args(kwargs["type"], kwargs), avg_exc
 
 
-def run_sync_tests(n_tests=25, *, min=0, max=5, type=None, randomize=True, executor=None, target_time=None):
+def run_sync_tests(
+    n_tests: int                            = 25,
+    *,
+    type: str | None                        = None,
+    min: int                                = 0,
+    max: int                                = 5,
+    randomize: bool                         = True,
+    tolerance: float | int                  = 0.0,
+    target_time: float | int | None         = None,
+    executor: ThreadPoolExecutor | None     = None,
+    **kwargs
+):
     """
     Run synchronous tests for different types of algorithms.
 
@@ -333,28 +347,37 @@ def run_sync_tests(n_tests=25, *, min=0, max=5, type=None, randomize=True, execu
     with executor or ThreadPoolExecutor(max_workers=5) as executor:
         if type is None:
             results = {}
-
             for type in ("slidingwindow", "fixedwindow", "tokenbucket", "leakybucket", "gcra"):
                 cleanup_dbs()
                 if randomize:
-                    kwargs = make_test(type, dct=True, target_time=target_time)
+                    params = make_test(type, dct=True, target_time=target_time)
 
-                current_target, current_delta = get_target_time(type, **kwargs)
-                print_test_headers(type, current_target, current_delta, kwargs)
-                test_results = tuple(executor.submit(func, min=min, max=max, type=type, key=f"{func.__name__}-{type}", **kwargs) for func in funcs)
+                current_target, current_delta = get_target_time(type, tolerance=tolerance, **params)
+                print_test_headers(type, current_target, current_delta, params)
+                test_results = tuple(executor.submit(func, min=min, max=max, tolerance=tolerance, type=type, key=f"{func.__name__}-{type}", **params, **kwargs) for func in funcs)
                 results[type] = tuple(result.result() for result in as_completed(test_results))
             return results
         else:
             cleanup_dbs()
             if randomize:
-                kwargs = make_test(type, dct=True, target_time=target_time)
-            current_target, current_delta = get_target_time(type, **kwargs)
-            print_test_headers(type, current_target, current_delta, kwargs)
-            test_results =  tuple(executor.submit(func, min=min, max=max, type=type, key=f"{func.__name__}-{type}", **kwargs) for func in funcs)
+                params = make_test(type, dct=True, target_time=target_time)
+            current_target, current_delta = get_target_time(type, tolerance=tolerance, **params)
+            print_test_headers(type, current_target, current_delta, params)
+            test_results =  tuple(executor.submit(func, min=min, max=max, tolerance=tolerance, type=type, key=f"{func.__name__}-{type}", **params, **kwargs) for func in funcs)
         return {type: tuple(result.result() for result in as_completed(test_results))}
 
 
-async def run_async_tests(n_tests=25, *, type=None, min=0, max=5, randomize=True, target_time=None):
+async def run_async_tests(
+    n_tests: int                            = 25,
+    *,
+    type: str | None                        = None,
+    min: int                                = 0,
+    max: int                                = 5,
+    randomize: bool                         = True,
+    tolerance: float | int                  = 0.0,
+    target_time: float | int | None         = None,
+    **kwargs
+):
     """
     Run synchronous tests for different types of algorithms.
 
@@ -375,18 +398,18 @@ async def run_async_tests(n_tests=25, *, type=None, min=0, max=5, randomize=True
         for type in ("slidingwindow", "fixedwindow", "tokenbucket", "leakybucket", "gcra"):
             cleanup_dbs()
             if randomize:
-                kwargs = make_test(type, dct=True, target_time=target_time)
-            current_target, current_delta = get_target_time(type, **kwargs)
-            print_test_headers(type, current_target, current_delta, kwargs)
-            results[type] = await asyncio.gather(*[func(min=min, max=max, type=type, key=f"{func.__name__}-{type}", **kwargs) for func in funcs])
+                params = make_test(type, dct=True, target_time=target_time)
+            current_target, current_delta = get_target_time(type, tolerance=tolerance, **params)
+            print_test_headers(type, current_target, current_delta, params)
+            results[type] = await asyncio.gather(*[func(min=min, max=max, tolerance=tolerance, type=type, key=f"{func.__name__}-{type}", **params, **kwargs) for func in funcs])
         return results
     else:
         cleanup_dbs()
         if randomize:
-            kwargs = make_test(type, dct=True, target_time=target_time)
-        current_target, current_delta = get_target_time(type, **kwargs)
-        print_test_headers(type, current_target, current_delta, kwargs)
-        test_results =  await asyncio.gather(*[func(min=min, max=max, type=type, key=f"{func.__name__}-{type}", **kwargs) for func in funcs])
+            params = make_test(type, dct=True, target_time=target_time)
+        current_target, current_delta = get_target_time(type, tolerance=tolerance, **params)
+        print_test_headers(type, current_target, current_delta, params)
+        test_results =  await asyncio.gather(*[func(min=min, max=max, tolerance=tolerance, type=type, key=f"{func.__name__}-{type}", **params, **kwargs) for func in funcs])
     return {type: test_results}
 
 

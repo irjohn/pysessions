@@ -16,6 +16,7 @@ dependencies = [
     "yarl",
     "redislite",
     "redis",
+    "termcolor",
 ]
 authors = [
     { name = "John Gaddis", email = "normlman@live.com" },
@@ -36,3 +37,6 @@ tor = ["stem"]
 
 [project.urls]
 Homepage = "https://github.com/irjohn/pysessions"
+
+[tool.pytest.ini_options]
+addopts="-n 5"

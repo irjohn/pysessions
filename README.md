@@ -4,7 +4,13 @@ This repository contains a collection of HTTP session clients. It provides optio
 
 ## Installation
 
-To install the sessions repository, clone the repository to your local machine:
+To install the sessions repository, you can use pip to install with:
+
+```bash
+pip install pysessions
+```
+
+Or alternatively, clone the repository to your local machine:
 
 ```bash
 git clone https://github.com/irjohn/pysessions.git
@@ -19,7 +25,7 @@ pip install .
 
 ## Usage
 
-Here's a basic example of how to use the sessions repository:
+### Here's a basic example of how to use the sessions repository:
 
 ```python
 from sessions import Session
@@ -28,172 +34,358 @@ from sessions import Session
 client = Session()
 
 # Make a GET request
-response = client.get('https://api.example.com/data')
+response = client.get('https://httpbin.org/ip')
 
 # Print the response
-print(response.json())
+print(response.json)
+
+Output
+{'origin': '45.27.245.68'}
 ```
 
-To utilize ratelimiting and caching features, there are 2 mixin classes provided, CacheMixin and RatelimitMixin. There are 5 implementations of ratelimiting: LeakyBucket, TokenBucket, SlidingWindow, FixedWindow, GCRA with 3 backends to choose from: InMemory, Redis, or SQLite. You can create a new Session with the mixins like this:
+### Multiple requests and callbacks are supported
 
 ```python
-from sessions import Session, CacheMixin, RatelimitMixin
+from sessions import Session
 
-class Session(CacheMixin, RatelimitMixin, Session):
+def callback(response):
+    print(f"Response status: {response.ok}")
+
+urls = (f"https://httpbin.org/get?id={x}" for x in range(100))
+s = Session()
+
+s.requests(urls, method="GET", callbacks=[callback])
+
+Output
+on 0: Response status: True
+on 1: Response status: True
+on 2: Response status: True
+on 3: Response status: True
+on 4: Response status: True
+on 5: Response status: True
+on 6: Response status: True
+on 7: Response status: True
+on 8: Response status: True
+on 9: Response status: True
+|████████████████████████████████████████| 10/10 [100%] in 0.6s (18.03/s)
+```
+### Callbacks can be configured to return results
+```python
+import random
+from sessions import Session
+from sessions.config import SessionConfig
+
+SessionConfig.return_callbacks = True
+
+def callback1(response):
+    if response.ok:
+        # Some work here
+        return {"callback": "callback1", "status": "success"}
+    return {"callback": "callback1", "status": "fail"}
+
+def callback2(response):
+    if response.ok:
+        # Some work here
+        return {"callback": "callback2", "status": "success"}
+    return {"callback": "callback2", "status": "fail"}
+
+
+urls = [
+    "https://httpbin.org/status/200",
+    "https://httpbin.org/status/404",
+]
+
+choices = random.choices(urls, k=5, weights=[0.9, 0.1])
+s = Session()
+
+responses = s.requests(choices, callbacks=[callback1, callback2])
+for response in responses:
+    print(response.callbacks)
+
+Output
+|████████████████████████████████████████| 5/5 [100%] in 0.2s (24.77/s)
+({'callback': 'callback1', 'status': 'success'}, {'callback': 'callback2', 'status': 'success'})
+({'callback': 'callback1', 'status': 'success'}, {'callback': 'callback2', 'status': 'success'})
+({'callback': 'callback1', 'status': 'success'}, {'callback': 'callback2', 'status': 'success'})
+({'callback': 'callback1', 'status': 'success'}, {'callback': 'callback2', 'status': 'success'})
+({'callback': 'callback1', 'status': 'fail'}, {'callback': 'callback2', 'status': 'fail'})
+```
+
+### To utilize ratelimiting and caching features, there are 2 mixin classes provided, CacheMixin and RatelimitMixin. There are 5 implementations of ratelimiting: LeakyBucket, TokenBucket, SlidingWindow, FixedWindow, GCRA with 3 backends to choose from: InMemory, Redis, or SQLite. You can create a new Session with the mixins like this:
+
+```python
+from sessions import Session, CacheMixin
+
+class Session(CacheMixin, Session):
     pass
 
 client = Session()
 
-url = 'https://api.example.com/data'
+url = 'https://httpbin.org/get?id=5013'
 
 response = client.get(url)
+print(response.json)
 
 print(client.cache[url])
-```
-# Backends
-Choose from: memory, redis, sql
-## Memory
-Manage cache in memory with pure python.
-### Parameters
-```
-cache_timeout: float | int | timedelta                |  How long a key remains active before being evicted
-default(3600)                                         |
-                                                      |
-check_frequency: float | int | timedelta              |  How often to check for expired keys for eviction
-default(15)                                           |
+print(client.cache[url].json)
+Output
+{'args': {'id': '5013'}, 'headers': {'Accept': '*/*', 'Accept-Encoding': 'gzip, deflate, br', 'Host': 'httpbin.org', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/116.', 'X-Amzn-Trace-Id': 'Root=1-65c64ac9-4136de573290794f5aeddc2f'}, 'origin': '45.27.245.68', 'url': 'https://httpbin.org/get?id=5013'}
+<Response [200 OK]>
+{'args': {'id': '5013'}, 'headers': {'Accept': '*/*', 'Accept-Encoding': 'gzip, deflate, br', 'Host': 'httpbin.org', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/116.', 'X-Amzn-Trace-Id': 'Root=1-65c64ac9-4136de573290794f5aeddc2f'}, 'origin': '45.27.245.68', 'url': 'https://httpbin.org/get?id=5013'}
 ```
 
+# Backends
+
+Choose from: memory, redis, sql
+
+## Memory
+
+Manage cache in memory with pure python.
+
+### Parameters
+
+- cache_timeout   
+    - How long a key remains active before being evicted
+    - float | int | timedelta  
+    - default 3600    
+                 
+- check_frequency   
+    - How often to check for expired keys for eviction
+    - float | int | timedelta
+    - default 15      
+
 ## Redis
+
 Spawns a temporary redis server that is closed upon program exit
+
 ### Parameters
-```
-# Existing Redis server                               |
-                                                      |
-conn:                                                 |  A redis connection object
-default(None)                                         |
-                                                      |
-host: str                                             |  A redis server to connect to. If set, a temporary server will not be started
-default(None)                                         |
-                                                      |
-port: int | str                                       |  The port to connect to redis server, host must be set
-default(None)                                         |
-                                                      |
-username: str                                         |  User to authenticate with
-default(None)                                         |
-                                                      |
-password: str                                         |  Password to authenticate with
-default(None)                                         |
-                                                      |
-# Temporary server Usage                              |
-                                                      |
-cache_timeout: float | int | timedelta                |  How long a key remains active before being evicted
-CacheMixin     default(3600)                          |
-RatelimitMixin default(300)                           |
-                                                      |
-dbfilename: str | Path                                |  A filename to save the dump to, if None the database will not be saved
-default(None)                                         |
-                                                      |
-db: str | Path                                        |  Alias for dbfilename
-default(None)                                         |
-                                                      |
-maxmemory: str | int                                  |  Maximum memory for the temporary redis server
-default(0)                                            |
-                                                      |
-maxmemory_policy: str                                 |  Policy for redis memory management. Must be one of: volatile-lru, allkeys-lru, volatile-lfu, allkeys-lfu,
-default("noeviction")                                 |                                                      volatile-random, allkeys-random, volatile-ttl, noeviction
-                                                      |
-decode_responses: bool                                |  Whether redis server should decode bytes to string objects
-default(False)                                        |
-                                                      |
-protocol: int                                         |  Redis RESP protocol version.
-default(3)                                            |
-```
-## SQL
-Use an SQL or SQLite database as cache
+
+### Existing Redis Server   
+                 
+- conn               
+    - A redis connection object
+    - default None    
+                 
+- host   
+    - A redis server to connect to. If set, a temporary server will not be started
+    - str          
+    - default None    
+                 
+- port       
+    - The port to connect to redis server, host must be set
+    - int | str
+    - default None    
+                 
+- username         
+    - User to authenticate with
+    - str
+    - default None    
+                 
+- password         
+    - Password to authenticate with
+    - str
+    - default None    
+                 
+### Temporary Server Usage  
+                 
+- cache_timeout     
+    - How long a key remains active before being evicted
+    - float | int | timedelta 
+    - CacheMixin     
+        - default 3600
+    - RatelimitMixin 
+        - default 300
+                 
+- dbfilename          
+    - A filename to save the dump to
+    - If None the database will not be saved on exit
+    - str | Path
+    - default None    
+                 
+- db        
+    - Alias for dbfilename
+    - str | Path
+    - default None    
+                 
+- maxmemory           
+    - Maximum memory for the temporary redis server
+    - str | int
+    - default 0       
+                 
+- maxmemory_policy          
+    - Policy for redis memory management.
+    - Must be one of: volatile-lru, allkeys-lru, volatile-lfu, allkeys-lfu, volatile-random, allkeys-random, volatile-ttl, noeviction
+    - str
+    - default "noeviction"                                                           
+                 
+- decode_responses    
+    - Whether redis server should decode bytes to string objects
+    - bool      
+    - default False   
+                 
+- protocol         
+    - Redis RESP protocol version.
+    - int
+    - default 3       
+
+
+## SQLite
+
+Use an SQLite database as cache
+
 ### Parameters
-    conn: sqlite3.Connection                              |  An SQLite connection object
-    default(None)                                         |
-                                                          |
-    cache_timeout: float | int | timedelta                |  How long a key remains active before being evicted
-    default(3600)                                         |
-                                                          |
-    db:  str | Path                                       |  An SQLite database filepath or SQL database
-    default(None)                                         |
+
+- conn    
+    - An SQLite connection object
+    - sqlite3.Connection
+    - default None    
+                   
+- cache_timeout   
+    - How long a key remains active before being evicted
+    - float | int | timedelta
+    - default 3600    
+                   
+- db 
+    - An SQLite database filepath
+    - str | Path    
+    - default None    
 
 
 # Mixins
-```
+
 Parameters are shared between mixins. To specify parameters for only one include a dictionary as a keyword argument
 
-ratelimit | ratelimit_options: dict                   |  Specify parameters for RatelimitMixin as a dictionary of parameters
-cache | cache_options: dict                           |  Specify parameters for CacheMixin as a dictionary of parameters
-```
-## RatelimitMixin
-    slidingwindow                                         |  Implements a sliding window algorithm
-        limit: int                                        |      Requests allowed within `window` seconds
-        window: int | float                               |      Time period in seconds of how many requests are allowed through in any `window` seconds
-                                                          |
-    fixedwindow                                           |  Implements a fixed window algorithm where
-        limit: int                                        |      Requests allowed every `window` seconds
-        window: int | float                               |      Time period in seconds where only `limit` requests are allowed every `window` seconds
-                                                          |
-    leakybucket                                           |  The leaky bucket algorithm is a rate limiting algorithm that allows a `capacity` of requests to be processed
-                                                          |  per unit of time. The `leak_rate` defines how many requests per second leak through
-        capacity: int | float                             |      Requests allowed before bucket is full
-        leak_rate: int | float                            |      The rate at which the bucket leaks requests per unit of time.
-                                                          |
-    tokenbucket                                           |  The bucket can hold at the most `capacity` tokens. If a token arrives when the bucket is full, it is discarded.
-                                                          |  A token is added to the bucket every 1/fill_rate seconds
-        capacity: int | float                             |      Requests allowed before bucket is empty
-        fill_rate: int | float                            |      The rate at which tokens are added to the bucket per second.
-                                                          |
-    gcra                                                  |  GCRA (Generic Cell Rate Algorithm) is a rate limiting algorithm that allows a burst of requests up to a certain `limit`
-                                                          |  within a specified time `period`
-        period: int | float                               |     Time period for each cell/token (in seconds)
-        limit: int                                        |     Limit on the burst size (in seconds)
-                                                          |
-### Usage
+- ratelimit_options: (dict)
+    - Specify parameters for RatelimitMixin as a dictionary of parameters
+- cache | cache_options: (dict)
+    - Specify parameters for CacheMixin as a dictionary of parameters
+
+# RatelimitMixin
+
+## Parameters
+
+- backend   
+Which backend to use: memory, redis, sqlite
+    - str
+    - default "memory"
+                 
+- key   
+Key prefix per cache item e.g. Session:METHOD:URL:ratelimit 
+    - string    
+    - default "Session"
+
+- cache_timeout   
+How long a key remains active before being evicted
+    - int | float
+    - default 300     
+                 
+- conn   
+Existing connection object to use
+    - Redis | sqlite3.Connection
+    - default: None    
+
+- per_host   
+Whether to ratelimit requests to the host 
+    - bool   
+    - default False   
+                 
+- per_endpoint   
+Whether to ratelimit requests to the endpoint
+    - bool
+    - default True    
+                 
+- sleep_duration   
+Amount of time program should sleep between ratelimit checks 
+    - int | float
+    - default(0.05)    
+                 
+- raise_errors   
+Whether to raise an error instead of delaying until request can go through 
+    - bool
+    - default False  
+
+## Ratelimit Algorithms
+
+- slidingwindow
+    - Implements a sliding window algorithm where`limit` requests can be made in any `window` seconds
+    - Parameters:
+        - `limit`: (int) | Requests allowed within `window` seconds
+        - `window`: (float, int) | Time period in seconds of how many requests are allowed through in any `window` seconds
+
+
+- fixedwindow
+    - Implements a fixed window algorithm where `limit` requests can be made every `window` seconds
+    - Parameters:
+        - `limit`: (int) | Requests allowed every `window` seconds
+        - `window`: (float, int) | Time period in seconds where only `limit` requests are allowed every `window` seconds
+
+
+- leakybucket
+    - The leaky bucket algorithm is a rate limiting algorithm that allows a `capacity` of requests to be processed per unit of time.  
+    - The `leak_rate` defines how many requests per second leak through
+    - Parameters
+        - `capacity`: (float, int)  | Requests allowed before bucket is full
+        - `leak_rate`: (float, int) | The rate at which the bucket leaks requests per unit of time.
+
+
+- tokenbucket
+    - The bucket can hold at the most `capacity` tokens. If a token arrives when the bucket is full, it is discarded.   
+    - A token is added to the bucket every 1 / `fill_rate` seconds
+    - Parameters:
+        - `capacity`: (float, int) |      Requests allowed before bucket is empty
+        - `fill_rate`: (float, int) |      The rate at which tokens are added to the bucket per second.
+
+
+- gcra
+    - GCRA (Generic Cell Rate Algorithm) is a rate limiting algorithm that allows a burst of requests up to a certain `limit` within a specified time `period`
+    - Parameters:
+        - `period`: (float, int) |     Time period for each cell/token (in seconds)
+        - `limit`: (int) |     Limit on the burst size (in seconds)
+
+## Usage
+
+### Basic
+
 ```python
 from sessions import Session, AsyncSession, RatelimitMixin
-
-class AsyncSession(RatelimitMixin, AsyncSession):
-    pass
 
 class Session(RatelimitMixin, Session):
     pass
 
+# algorithm type can be specified by a variety of keyword args, most commonly: type, ratelimiter, ratelimit, rate_limit, limiter, limitertype
+session = Session(backend="memory", type="slidingwindow", window=1, limit=10, per_host=True)
+urls = ["https://httpbin.org/uuid"] * 100
 
+session.requests(urls)
 ```
 
-### Parameters
-```
-backend: str                                          |
-default("memory")                                     |
-                                                      |
-key: string                                           |  Key prefix per cache item e.g. Session:METHOD:URL:ratelimit
-default("Session")                                    |
-                                                      |
-cache_timeout: int | float                            |  How long a key remains active before being evicted
-default(300)                                          |
-                                                      |
-conn: Redis | sqlite3.Connection | pymysql.Connection |  Existing connection object to use
-default(None)                                         |
-                                                      |
-per_host: bool                                        |  Whether to ratelimit requests to the host
-default(False)                                        |
-                                                      |
-per_endpoint: bool                                    |  Whether to ratelimit requests to the endpoint
-default(True)                                         |
-                                                      |
-sleep_duration: int | float                           |  Amount of time program should sleep between ratelimit checks
-default(0.05)                                         |
-                                                      |
-raise_errors: bool                                    |  Whether to raise an error instead of delaying until request can go through
-default(False)                                        |
-```
+![alt text](/assets/gif/ratelimit-basic.gif)
 
 ## CacheMixin
+
+### Parameters
+
+- backend: str     
+One of: memory, redis, sqlite   
+Backend to use for caching.    
+    - default "memory"
+                 
+- key: string        
+Key prefix per cache item e.g. Session:METHOD:URL:ratelimit
+    - default "Session"
+                 
+- cache_timeout   
+How long a key remains active before being evicted 
+    - int | float
+    - default 3600    
+                 
+- conn   
+Existing connection object to use
+    - Redis | sqlite3.Connection | pymysql.Connection
+    - default None
+
 ### Usage
+
 ```python
 from sessions import Session, CacheMixin, RatelimitMixin
 
@@ -207,20 +399,6 @@ url = 'https://api.example.com/data'
 response = client.get(url)
 
 print(client.cache[url])
-```
-### Parameter
-```
-backend: str                                          |
-default("memory")                                     |
-                                                      |
-key: string                                           |  Key prefix per cache item e.g. Session:METHOD:URL:ratelimit
-default("Session")                                    |
-                                                      |
-cache_timeout: int | float                            |  How long a key remains active before being evicted
-default(3600)                                         |
-                                                      |
-conn: Redis | sqlite3.Connection | pymysql.Connection |  Existing connection object to use
-default(None)                                         |
 ```
 
 # Testing

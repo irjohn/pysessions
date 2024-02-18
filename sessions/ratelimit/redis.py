@@ -6,7 +6,7 @@ from .abstract import Ratelimit, RatelimitDecoratorMixin
 
 
 class LeakyBucket(Ratelimit):
-    __slots__ = ("_ratelimit_conn", "_capacity", "_leak_rate")
+    __slots__ = ("_capacity", "_leak_rate")
 
     def __init__(
         self,
@@ -23,10 +23,10 @@ class LeakyBucket(Ratelimit):
 
     def _leak(self, key):
         # Get the key information
-        data = self._ratelimit_conn.hgetall(key) # type: ignore
+        data = self._conn.hgetall(key) # type: ignore
         if not data: # type: ignore
             now = time.time()
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"content": 0, "last_check": now, "last_update": now}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"content": 0, "last_check": now, "expiration": now + self.options.cache_timeout}) # type: ignore
             return 0
 
         content = float(data[b"content"]) # type: ignore
@@ -41,21 +41,20 @@ class LeakyBucket(Ratelimit):
         content = max(content, 0)  # Ensure content doesn't go negative
 
         # Store the data
-        self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"content": content, "last_check": now, "last_update": now}) # type: ignore
+        self._set_redis_key(key, self._conn.hset, mapping={"content": content, "last_check": now, "expiration": now + self.options.cache_timeout}) # type: ignore
         return content
 
 
     def ok(self, key):
         content = self._leak(key)
         if content < self._capacity:
-            self._set_redis_key(key, self._ratelimit_conn.hset, "content", content + 1) # type: ignore
+            self._set_redis_key(key, self._conn.hset, "content", content + 1) # type: ignore
             return True
         return False
 
 
-
 class TokenBucket(Ratelimit):
-    __slots__ = ("_ratelimit_conn", "_capacity", "_fill_rate")
+    __slots__ = ("_capacity", "_fill_rate")
 
     def __init__(
         self,
@@ -71,10 +70,10 @@ class TokenBucket(Ratelimit):
 
 
     def get_tokens(self, key):
-        data = self._ratelimit_conn.hgetall(key) # type: ignore
+        data = self._conn.hgetall(key) # type: ignore
         if not data:
             now = time.time()
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"tokens": self._capacity, "last_fill": now, "last_update": now}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"tokens": self._capacity, "last_fill": now, "expiration": now + self.options.cache_timeout}) # type: ignore
             return self._capacity
 
         tokens = float(data[b"tokens"]) # type: ignore
@@ -92,11 +91,11 @@ class TokenBucket(Ratelimit):
 
         # Store the new number of tokens and the last fill time
         if tokens < 1:
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"tokens": tokens, "last_fill": now, "last_update": now}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"tokens": tokens, "last_fill": now, "expiration": now + self.options.cache_timeout}) # type: ignore
             return False
 
         tokens -= 1
-        self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"tokens": tokens, "last_fill": now, "last_update": now}) # type: ignore
+        self._set_redis_key(key, self._conn.hset, mapping={"tokens": tokens, "last_fill": now, "expiration": now + self.options.cache_timeout}) # type: ignore
         return True
 
 
@@ -105,7 +104,7 @@ class TokenBucket(Ratelimit):
 
 
 class SlidingWindow(Ratelimit):
-    __slots__ = ("_ratelimit_conn", "_limit", "_window")
+    __slots__ = ("_limit", "_window")
 
     def __init__(
         self,
@@ -136,17 +135,17 @@ class SlidingWindow(Ratelimit):
 
 
     def ok(self, key):
-        self._set_redis_key(key, self._ratelimit_conn.zremrangebyscore, 0, self.edge) # type: ignore
-        count = self._ratelimit_conn.zcard(key) # type: ignore
+        self._set_redis_key(key, self._conn.zremrangebyscore, 0, self.edge) # type: ignore
+        count = self._conn.zcard(key) # type: ignore
         if count < self.limit: # type: ignore
             ts = self.current_timestampns
-            self._set_redis_key(key, self._ratelimit_conn.zadd, mapping={ts:ts})# type: ignore
+            self._set_redis_key(key, self._conn.zadd, mapping={ts:ts})# type: ignore
             return True
         return False
 
 
 class FixedWindow(Ratelimit):
-    __slots__ = ("_ratelimit_conn", "_limit", "_window")
+    __slots__ = ("_limit", "_window")
 
     def __init__(
         self,
@@ -162,10 +161,10 @@ class FixedWindow(Ratelimit):
 
 
     def ok(self, key):
-        data = self._ratelimit_conn.hgetall(key) # type: ignore
+        data = self._conn.hgetall(key) # type: ignore
         if not data:
             now = time.time()
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"requests": 1, "window_start": now, "last_update": now}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"requests": 1, "window_start": now, "expiration": now + self.options.cache_timeout}) # type: ignore
 
             return True
 
@@ -174,18 +173,18 @@ class FixedWindow(Ratelimit):
         current_time = time.time()
         if current_time - window_start > self._window:
             requests = 0
-            self._ratelimit_conn.hset(key, mapping={"requests": requests, "window_start": time.time(), "last_update": current_time}) # type: ignore
+            self._conn.hset(key, mapping={"requests": requests, "window_start": time.time(), "expiration": current_time + self.options.cache_timeout}) # type: ignore
 
         if requests < self._limit:
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"requests": requests + 1, "last_update": current_time}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"requests": requests + 1, "expiration": current_time + self.options.cache_timeout}) # type: ignore
             return True
 
-        self._set_redis_key(key, self._ratelimit_conn.hset, "last_update", current_time) # type: ignore
+        self._set_redis_key(key, self._conn.hset, "expiration", current_time) # type: ignore
         return False
 
 
 class GCRA(Ratelimit):
-    __slots__ = ("_ratelimit_conn", "_period", "_limit")
+    __slots__ = ("_period", "_limit")
 
     def __init__(
         self,
@@ -201,10 +200,10 @@ class GCRA(Ratelimit):
 
 
     def ok(self, key):
-        data = self._ratelimit_conn.hgetall(key) # type: ignore
+        data = self._conn.hgetall(key) # type: ignore
         if not data:
             now = time.time()
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"last_time": now, "last_update": now}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"last_time": now, "expiration": now + self.options.cache_timeout}) # type: ignore
             return True
 
         last_time = float(data[b"last_time"]) # type: ignore
@@ -212,10 +211,10 @@ class GCRA(Ratelimit):
         expected_time = last_time + self._period
 
         if current_time < expected_time - self._limit:
-            self._set_redis_key(key, self._ratelimit_conn.hset, "last_update", current_time) # type: ignore
+            self._set_redis_key(key, self._conn.hset, "expiration", current_time) # type: ignore
             return False
         else:
-            self._set_redis_key(key, self._ratelimit_conn.hset, mapping={"last_time": max(expected_time, current_time), "last_update": current_time}) # type: ignore
+            self._set_redis_key(key, self._conn.hset, mapping={"last_time": max(expected_time, current_time), "expiration": current_time + self.options.cache_timeout}) # type: ignore
             return True
 
 
@@ -233,8 +232,8 @@ class RedisRatelimitFactory:
         type = _CLASS_TYPES[type_name]
         self = type.__new__(type)
         self._instance = instance
-        self.__init__(*args, key=key, **kwargs)
         self._ratelimit_type = type_name
+        self.__init__(*args, key=key, **kwargs)
         return self
 
 

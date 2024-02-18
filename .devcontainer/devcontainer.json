@@ -5,13 +5,13 @@
     // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
     "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bullseye",
     "features": {
-        "ghcr.io/warrenbuckley/codespace-features/sqlite:1": {},
+        "ghcr.io/warrenbuckley/codespace-features/sqlite:1": {}
     },
     "runArgs": [
         "--network",
         "sessions"
     ],
-    "postCreateCommand": "pip install . rich pytest && sudo apt install curl iputils-ping -y"
+    "postCreateCommand": "sudo apt install curl iputils-ping -y && pip install pytest pytest-xdist && pip install -e ."
     // Features to add to the dev container. More info: https://containers.dev/features.
     // "features": {},
     // Use 'forwardPorts' to make a list of ports inside the container available locally.

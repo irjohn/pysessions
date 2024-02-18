@@ -1,5 +1,6 @@
 from .abstract import Cache
 
+
 class InMemoryCache(Cache):
     __slots__ = ("_cache_conn")
 
@@ -14,14 +15,14 @@ class InMemoryCache(Cache):
     def __contains__(self, key):
         if not key.endswith(":cache"):
             key = self._parse_key(key)
-        return self._cache_conn.__contains__(key)
+        return self._conn.__contains__(key)
 
     @Cache.deserialize
     def __getitem__(self, key):
         if not key.endswith(":cache"):
             key = self._parse_key(key)
 
-        value = self._cache_conn[key]
+        value = self._conn[key].response
         if value is None:
             return value
 
@@ -38,24 +39,24 @@ class InMemoryCache(Cache):
         if self.options.compression:
             value = self._compress(value)
 
-        self._cache_conn[key] = value
+        self._conn[key] = value
 
     def __delitem__(self, key):
         if not key.endswith(":cache"):
             key = self._parse_key(key)
-        del self._cache_conn[key]
+        del self._conn[key]
 
     def keys(self):
-        return self._cache_conn.keys()
+        return self._conn.keys()
 
     def values(self):
-        return tuple(self._cache_conn.values())
+        return tuple(self._conn.values())
 
     def items(self):
-        return tuple(self._cache_conn.items())
+        return tuple(self._conn.items())
 
     def clear(self):
-        return self._cache_conn.clear()
+        return self._conn.clear()
 
     def _cleanup(self):
         pass

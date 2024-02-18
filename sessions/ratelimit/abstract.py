@@ -10,7 +10,9 @@ from redislite import Redis
 
 from yarl import URL
 
-from ..objects import RatelimitOptions, RatelimitInMemoryCache
+from ..backends import *
+from ..options import RatelimitOptions
+from ..enums import RatelimitParams
 
 
 class Ratelimit(ABC):
@@ -31,8 +33,8 @@ class Ratelimit(ABC):
     Attributes:
         options (RatelimitOptions): The rate limit options object.
     """
-
-    __slots__ = ("_count", "_start_time", "options", "_instance", "_ratelimit_type", "_backend", "_cache", "_threadpool")
+    __slots__ = "_count", "_start_time", "_options", "_instance", "_ratelimit_type", "_backend", "_backend_options", "_cache", "_threadpool", "_pool", "_conn"
+    ID = 0
 
     def __init__(
         self,
@@ -47,8 +49,10 @@ class Ratelimit(ABC):
         raise_errors:    bool              = False,
         **kwargs,
     ):
+        Ratelimit.ID += 1
         kwargs = {
-            "key":               key,
+            "key":              key or f"{self.__class__.__name__}-{Ratelimit.ID}",
+            "default":          self.default,
             "per_host":         per_host,
             "per_endpoint":     per_endpoint,
             "cache_timeout":    cache_timeout,
@@ -63,56 +67,59 @@ class Ratelimit(ABC):
         self._count = 0
         self._start_time = time.time()
 
-        self.options = RatelimitOptions.from_backend(backend, **kwargs)
+        self._options = RatelimitOptions.from_backend(backend, **kwargs)
+        self._backend_options = BackendOptions.from_backend(backend, **kwargs)
 
-        self.connect()
-        _register(self._cleanup)
+        self.connect(conn=conn)
 
     def __repr__(self) -> str:
-        keys = ", ".join(f"{key.lstrip('_')}={getattr(self, key)}" for key in self.__slots__)
-        return f"<{self.options.backend.title()}{self.__class__.__name__} {self.rate}\n{keys}>"
+        fields = getattr(RatelimitParams, self._ratelimit_type.upper()).value
+        values = (getattr(self, f"_{field}") for field in fields)
+        items = ", ".join(f"{str(field)}: {str(value)}" for field, value in zip(fields, values))
+        return f"<{self.options.backend.title()}{self.__class__.__name__} current_rate: {self.rate}, {items}>"
 
     def __str__(self) -> str:
-        keys = ", ".join(f"{key.lstrip('_')}={getattr(self, key)}" for key in self.__slots__)
-        return f"<{self.options.backend.title()}{self.__class__.__name__} {self.rate}\n{keys}>"
+        fields = getattr(RatelimitParams, self._ratelimit_type.upper()).value
+        values = (getattr(self, f"_{field}") for field in fields)
+        items = ", ".join(f"{str(field)}: {str(value)}" for field, value in zip(fields, values))
+        return f"<{self.options.backend.title()}{self.__class__.__name__} current_rate: {self.rate}, {items}>"
 
-    def connect(self, conn=None):
-        if self.options.backend == "memory":
-            if conn is not None and isinstance(conn, RatelimitInMemoryCache):
-                self._ratelimit_conn = conn
-            else:
-                self._ratelimit_conn = RatelimitInMemoryCache(options=self.options, default=self.default) # type: ignore
-
-        elif self.options.backend == "redis":
-            if conn is not None and isinstance(conn, Redis):
-                self._ratelimit_conn = conn
-            else:
-                self._ratelimit_conn = Redis(**self.options.redis_server_config())
-
-        elif self.options.backend == "sqlite":
-            if conn is not None and isinstance(conn, sqlite3.Connection):
-                self._ratelimit_conn = conn
-            else:
-                self._ratelimit_conn = sqlite3.connect(self.options.db)
-
-            try:
-                self._cursor = self._ratelimit_conn.cursor()
-            except:
-                self._cursor = self.newconn().cursor()
-            self._ratelimit_conn.row_factory = sqlite3.Row
+    def connect(self, conn=None) -> None:
+        self._pool = ConnectionPool.from_options(self.backend, self._backend_options)
+        self._conn = self._pool.get_connection()
+        if self.options.backend == "sqlite":
             self._create_tables()
+
+    def _cleanup(self):
+        self._pool.release(self._conn)
+
+    def set_option(self, key, value) -> None:
+        try:
+            setattr(self, f"_{key}", value)
+        except AttributeError:
+            if key in self.options.__dict__:
+                return self.options.override(key, value)
+            raise AttributeError(f"Attribute {key} not found.")
 
     @property
     def default(self):
         return None
 
     @property
+    def backend(self) -> str:
+        return self.options.backend
+
+    @property
     def cache(self):
-        return self._ratelimit_conn
+        return self._conn
 
     @property
     def count(self):
         return self._count
+
+    @property
+    def params(self):
+        return {param: getattr(self, f"_{param}") for param in getattr(RatelimitParams, self._ratelimit_type.upper()).value}
 
     @property
     def start_time(self):
@@ -123,25 +130,8 @@ class Ratelimit(ABC):
         return self._count / (time.time() - self._start_time)
 
     @property
-    def backend(self):
-        return self.options.backend
-
-    @property
-    def key(self):
-        return self.options.key
-
-    def clear(self):
-        if self.options.backend == "memory":
-            return self.cache.clear()
-        elif self.options.backend == "redis":
-            return self.cache.flushdb()
-        elif self.options.backend == "sqlite":
-            return self.cache.clear()
-
-    def _cleanup(self):
-        if self.options.backend == "redis":
-            self.cache._cleanup() # type: ignore
-            self.cache.shutdown() # type: ignore
+    def options(self):
+        return self._options
 
     @property
     def key(self):
@@ -154,6 +144,30 @@ class Ratelimit(ABC):
     @property
     def now(self):
         return time.time()
+
+    def keys(self):
+        if self.options.backend == "memory":
+            return self._conn.keys("ratelimit")
+        return self._pool.keys("ratelimit")
+
+    def values(self):
+        if self.options.backend == "memory":
+            return self._conn.values("ratelimit")
+        return self._pool.values("ratelimit")
+
+    def items(self):
+        if self.options.backend == "memory":
+            return self._conn.items("ratelimit")
+        return self._pool.items("ratelimit")
+
+    # TODO : Fix this method to correctly clear the cache of the ratelimit
+    def clear(self):
+        if self.options.backend == "memory":
+            return self.cache.clear()
+        elif self.options.backend == "redis":
+            return self.cache.flushdb()
+        elif self.options.backend == "sqlite":
+            return self.cache.clear()
 
     def _parse_url(self, url):
         try:
@@ -179,15 +193,15 @@ class Ratelimit(ABC):
 
     def increment(self, url=None, method=None, keys=None, **kwargs):
         key = self._parse_key(url=url, method=method, keys=keys)
-        while not self.ok(key): # type: ignore
+        while not self.ok(key):
             if self.options.raise_errors:
                 raise InterruptedError("Rate limit exceeded.")
             time.sleep(self.options.sleep_duration)
-        self._count += 1
+            self._count += 1
 
     async def increment_async(self, url=None, method=None, keys=None, **kwargs):
         key = self._parse_key(url=url, method=method, keys=keys)
-        while not self.ok(key): # type: ignore
+        while not self.ok(key):
             if self.options.raise_errors:
                 raise InterruptedError("Rate limit exceeded.")
             await sleep(self.options.sleep_duration)
